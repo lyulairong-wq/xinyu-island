@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 const consentItems = [
@@ -10,6 +10,8 @@ const consentItems = [
 ] as const;
 
 type User = { nickname: string; email: string; ageBand: string };
+type Contact = { id: string; name: string; tagline: string; description: string; avatar: string; tone: string };
+type Message = { id: string; role: "user" | "assistant"; content: string; mode?: "free" | "token"; createdAt: string };
 
 export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -75,5 +77,36 @@ function RegisterForm({ onSuccess, onMessage }: { onSuccess: (user: User) => voi
 }
 
 function ChatHome({ user, onLogout }: { user: User; onLogout: () => void }) {
-  return <main className="chat-shell"><aside className="sidebar"><div className="sidebar-brand"><span className="small-mark">心</span><span>心屿</span></div><nav><button className="nav-item selected">▣ <span>聊天</span></button><button className="nav-item">♧ <span>联系人</span></button><button className="nav-item">◇ <span>应用</span></button><button className="nav-item">◎ <span>我的</span></button></nav><button className="profile" onClick={onLogout}><span className="avatar">{user.nickname.slice(0, 1)}</span><span><b>{user.nickname}</b><small>退出登录</small></span></button></aside><section className="chat-main"><header><div><p className="eyebrow">CHAT</p><h2>聊天</h2></div><button className="quiet-button">＋ 新建对话</button></header><div className="welcome"><div className="welcome-orb">✦</div><h3>欢迎来到心屿，{user.nickname}</h3><p>选择一个 AI 联系人，开始一段轻松的对话。</p><div className="empty-actions"><button>浏览官方 AI</button><button>创建 AI 联系人</button></div></div></section></main>;
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selected, setSelected] = useState<Contact | null>(null);
+  const [conversationId, setConversationId] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [content, setContent] = useState("");
+  const [mode, setMode] = useState<"free" | "token">("free");
+  const [notice, setNotice] = useState("");
+  const token = typeof window !== "undefined" ? localStorage.getItem("xinyu_access_token") : null;
+
+  useEffect(() => { void fetch(`${API_URL}/contacts/official`).then((response) => response.json()).then(setContacts).catch(() => setNotice("暂时无法加载官方 AI 联系人")); }, []);
+
+  const openContact = async (contact: Contact) => {
+    setSelected(contact); setMessages([]); setNotice("");
+    try {
+      const response = await fetch(`${API_URL}/chat/conversations`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` }, body: JSON.stringify({ contactId: contact.id }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "无法创建对话");
+      setConversationId(data.id);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "暂时无法创建对话"); }
+  };
+
+  const send = async (event: FormEvent) => {
+    event.preventDefault(); if (!content.trim() || !conversationId) return;
+    const outgoing = content; setContent("");
+    try {
+      const response = await fetch(`${API_URL}/chat/conversations/${conversationId}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` }, body: JSON.stringify({ content: outgoing, mode, memoryEnabled: false }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.message ?? "发送失败");
+      setMessages((current) => [...current, data.userMessage, data.assistantMessage]); setNotice(data.notice);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "暂时无法发送消息"); }
+  };
+
+  return <main className="chat-shell"><aside className="sidebar"><div className="sidebar-brand"><span className="small-mark">心</span><span>心屿</span></div><nav><button className="nav-item selected">▣ <span>聊天</span></button><button className="nav-item">♧ <span>联系人</span></button><button className="nav-item">◇ <span>应用</span></button><button className="nav-item">◎ <span>我的</span></button></nav><button className="profile" onClick={onLogout}><span className="avatar">{user.nickname.slice(0, 1)}</span><span><b>{user.nickname}</b><small>退出登录</small></span></button></aside><section className="chat-main"><header><div><p className="eyebrow">CHAT</p><h2>{selected?.name ?? "聊天"}</h2></div><div className="mode-switch"><button className={mode === "free" ? "active" : ""} onClick={() => setMode("free")}>免费</button><button className={mode === "token" ? "active" : ""} onClick={() => setMode("token")}>Token</button></div></header>{selected ? <div className="conversation"><div className="contact-intro"><span className="contact-avatar">{selected.avatar}</span><div><b>{selected.name}</b><p>{selected.tagline} · {selected.description}</p></div></div><div className="message-list">{messages.length === 0 && <p className="conversation-empty">从一句简单的问候开始吧。</p>}{messages.map((message) => <div className={`bubble ${message.role}`} key={message.id}>{message.content}</div>)}</div>{notice && <p className="chat-notice">{notice}</p>}<form className="composer" onSubmit={send}><input value={content} onChange={(event) => setContent(event.target.value)} placeholder={`和 ${selected.name} 说点什么…`} maxLength={4000} /><button type="submit">发送</button></form></div> : <div className="welcome"><div className="welcome-orb">✦</div><h3>欢迎来到心屿，{user.nickname}</h3><p>选择一个 AI 联系人，开始一段轻松的对话。</p><div className="contact-grid">{contacts.map((contact) => <button className="contact-card" onClick={() => void openContact(contact)} key={contact.id}><span className="contact-avatar">{contact.avatar}</span><span><b>{contact.name}</b><small>{contact.tagline}</small></span></button>)}</div></div>}</section></main>;
 }
