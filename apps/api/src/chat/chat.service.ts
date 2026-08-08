@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { MockAiProvider, OpenAiCompatibleProvider, type AiProvider } from "@xinyu/ai";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
-import { OFFICIAL_CONTACTS } from "../contacts/official-contacts";
+import { ContactsService } from "../contacts/contacts.service";
 import type { SendMessageDto } from "./dto/send-message.dto";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; mode?: "free" | "token"; createdAt: Date };
@@ -12,28 +12,26 @@ export class ChatService {
   private readonly mockProvider = new MockAiProvider();
   private readonly freeProvider: AiProvider;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(private readonly prisma: PrismaService, private readonly contacts: ContactsService) {
     const endpoint = process.env.FREE_MODEL_BASE_URL;
     const model = process.env.FREE_MODEL_NAME;
     this.freeProvider = endpoint && model ? new OpenAiCompatibleProvider(endpoint, model, Number(process.env.FREE_MODEL_TIMEOUT_MS ?? 30_000)) : this.mockProvider;
   }
 
   async createConversation(userId: string, contactId: string) {
-    const contact = OFFICIAL_CONTACTS.find((item) => item.id === contactId);
-    if (!contact) throw new NotFoundException("找不到该 AI 联系人");
+    const contact = await this.contacts.resolve(userId, contactId);
     const conversation = await this.prisma.conversation.create({ data: { userId, contactId, kind: "single" } });
     return { id: conversation.id, contact };
   }
 
   async getConversation(userId: string, conversationId: string) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
-    return { ...conversation, contact: OFFICIAL_CONTACTS.find((item) => item.id === conversation.contactId) };
+    return { ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId) };
   }
 
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
-    const contact = OFFICIAL_CONTACTS.find((item) => item.id === conversation.contactId);
-    if (!contact) throw new NotFoundException("找不到该 AI 联系人");
+    const contact = await this.contacts.resolve(userId, conversation.contactId);
     const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode } });
     const provider = input.mode === "free"
       ? (this.freeProvider === this.mockProvider ? new MockAiProvider(contact.name) : this.freeProvider)
