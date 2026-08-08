@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ContactsModule } from "./contacts/contacts.module";
 import { ChatModule } from "./chat/chat.module";
+import { UsageModule } from "./usage/usage.module";
 
 @Controller()
 class AppController {
@@ -18,7 +19,7 @@ class AppController {
 }
 
 @Module({
-  imports: [PrismaModule, AuthModule, ContactsModule, ChatModule],
+  imports: [PrismaModule, AuthModule, ContactsModule, ChatModule, UsageModule],
   controllers: [AppController]
 })
 export class AppModule {}

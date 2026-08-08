@@ -23,6 +23,8 @@ model User {
   privateContacts PrivateContact[]
   memories     ContactMemory[]
   defaultMemoryEnabled Boolean @default(false)
+  tokenAccount TokenAccount?
+  usageRecords TokenUsageRecord[]
 }
 
 model UserSession {
@@ -97,6 +99,35 @@ model ContactMemory {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, contactId, updatedAt])
+}
+
+model TokenAccount {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  freeLimit   Int      @default(10000)
+  freeUsed    Int      @default(0)
+  freeResetAt DateTime
+  paidBalance Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TokenUsageRecord {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String?
+  messageId      String?
+  mode           String
+  bucket         String
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  totalTokens    Int      @default(0)
+  source         String   @default("estimated")
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([conversationId, createdAt])
 }
 
 model Message {

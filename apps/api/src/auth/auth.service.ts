@@ -37,6 +37,7 @@ export class AuthService {
             source: "web"
           }))
       });
+      await tx.tokenAccount.create({ data: { userId: created.id, freeResetAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
       return created;
     });
     return this.createSession(user.id, input.deviceLabel);

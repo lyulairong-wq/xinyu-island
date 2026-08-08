@@ -22,11 +22,12 @@ function createPrismaMock() {
 }
 
 const contactsMock = { resolve: vi.fn(async (_userId: string, contactId: string) => ({ id: contactId, name: "林屿", tagline: "安静听你说", description: "", avatar: "林", tone: "温和" })) };
+const usageMock = { assertAvailable: vi.fn(async () => undefined), consume: vi.fn(async () => undefined) };
 
 describe("ChatService", () => {
   it("persists an official conversation and returns a free mock reply", async () => {
     const prisma = createPrismaMock();
-    const service = new ChatService(prisma as never, contactsMock as never);
+    const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
     const conversation = await service.createConversation("user-1", "lin");
     const result = await service.sendMessage("user-1", conversation.id, { content: "你好", mode: "free", memoryEnabled: false });
     expect(result.assistantMessage.role).toBe("assistant");
@@ -37,7 +38,7 @@ describe("ChatService", () => {
 
   it("keeps conversations isolated by owner", async () => {
     const prisma = createPrismaMock();
-    const service = new ChatService(prisma as never, contactsMock as never);
+    const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
     const conversation = await service.createConversation("user-1", "lin");
     await expect(service.getConversation("user-2", conversation.id)).rejects.toThrow();
   });

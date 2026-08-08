@@ -3,6 +3,7 @@ import { MockAiProvider, OpenAiCompatibleProvider, type AiProvider } from "@xiny
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { ContactsService } from "../contacts/contacts.service";
+import { UsageService } from "../usage/usage.service";
 import type { SendMessageDto } from "./dto/send-message.dto";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; mode?: "free" | "token"; createdAt: Date };
@@ -12,7 +13,7 @@ export class ChatService {
   private readonly mockProvider = new MockAiProvider();
   private readonly freeProvider: AiProvider;
 
-  constructor(private readonly prisma: PrismaService, private readonly contacts: ContactsService) {
+  constructor(private readonly prisma: PrismaService, private readonly contacts: ContactsService, private readonly usage: UsageService) {
     const endpoint = process.env.FREE_MODEL_BASE_URL;
     const model = process.env.FREE_MODEL_NAME;
     this.freeProvider = endpoint && model ? new OpenAiCompatibleProvider(endpoint, model, Number(process.env.FREE_MODEL_TIMEOUT_MS ?? 30_000)) : this.mockProvider;
@@ -32,6 +33,8 @@ export class ChatService {
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
     const contact = await this.contacts.resolve(userId, conversation.contactId);
+    const estimatedInputTokens = Math.ceil(input.content.trim().length / 2);
+    await this.usage.assertAvailable(userId, input.mode, estimatedInputTokens + 200);
     const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode } });
     const provider = input.mode === "free"
       ? (this.freeProvider === this.mockProvider ? new MockAiProvider(contact.name) : this.freeProvider)
@@ -44,10 +47,13 @@ export class ChatService {
     }
     if (!text || failed) text = await this.collectMockReply(conversationId, input.content, contact.name);
     const assistantMessage = await this.prisma.message.create({ data: { conversationId, role: "assistant", content: text, mode: input.mode } });
+    const inputTokens = estimatedInputTokens;
+    const outputTokens = Math.ceil(text.length / 2);
+    await this.usage.consume(userId, { mode: input.mode, conversationId, messageId: assistantMessage.id, inputTokens, outputTokens });
     const notice = input.mode === "free"
       ? (this.freeProvider === this.mockProvider ? "当前使用免费 Mock 回复，仅供娱乐参考。" : "当前使用免费开源模型回复，仅供娱乐参考。")
       : "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。";
-    return { userMessage, assistantMessage, mode: input.mode, chargedTokens: 0, notice };
+    return { userMessage, assistantMessage, mode: input.mode, chargedTokens: input.mode === "token" ? inputTokens + outputTokens : 0, notice, estimatedResourceTokens: inputTokens + outputTokens };
   }
 
   private async collectMockReply(conversationId: string, content: string, name: string) {
