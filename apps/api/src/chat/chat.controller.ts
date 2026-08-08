@@ -11,7 +11,7 @@ export class ChatController {
   constructor(private readonly chat: ChatService) {}
 
   @Post("conversations")
-  create(@CurrentUser() user: AuthenticatedUser, @Body("contactId") contactId: string) {
+  async create(@CurrentUser() user: AuthenticatedUser, @Body("contactId") contactId: string) {
     return this.chat.createConversation(user.id, contactId);
   }
 
