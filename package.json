@@ -1,0 +1,28 @@
+{
+  "name": "xinyu-island",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.22.1",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev --workspace @xinyu/api\" \"npm run dev --workspace @xinyu/web\"",
+    "dev:api": "npm run dev --workspace @xinyu/api",
+    "dev:web": "npm run dev --workspace @xinyu/web",
+    "build": "npm run build --workspace @xinyu/contracts && npm run build --workspace @xinyu/config && npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety && npm run build --workspace @xinyu/api && npm run build --workspace @xinyu/web",
+    "typecheck": "npm run build --workspace @xinyu/contracts && npm run typecheck --workspace @xinyu/config && npm run typecheck --workspace @xinyu/ai && npm run typecheck --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/api && npm run typecheck --workspace @xinyu/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run prisma:generate --workspace @xinyu/api",
+    "db:migrate": "npm run prisma:migrate --workspace @xinyu/api"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.3",
+    "typescript": "5.9.3"
+  }
+}

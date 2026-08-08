@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: xinyu
+      POSTGRES_PASSWORD: xinyu
+      POSTGRES_DB: xinyu_island
+    ports:
+      - "5432:5432"
+    volumes:
+      - xinyu-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xinyu -d xinyu_island"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  xinyu-postgres-data:
