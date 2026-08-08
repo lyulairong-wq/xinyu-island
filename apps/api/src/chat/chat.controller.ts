@@ -21,7 +21,7 @@ export class ChatController {
   }
 
   @Post("conversations/:conversationId/messages")
-  send(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string, @Body() input: SendMessageDto) {
+  async send(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string, @Body() input: SendMessageDto) {
     return this.chat.sendMessage(user.id, conversationId, input);
   }
 }
