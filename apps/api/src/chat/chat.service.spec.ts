@@ -14,6 +14,11 @@ function createPrismaMock() {
       findFirst: vi.fn(async ({ where }: { where: { id: string; userId: string } }) => {
         const item = conversations.get(where.id);
         return item?.userId === where.userId ? item : null;
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({ id: where.id, ...data })),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        conversations.delete(where.id);
+        return { id: where.id };
       })
     },
     message: {
@@ -45,5 +50,20 @@ describe("ChatService", () => {
     const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
     const conversation = await service.createConversation("user-1", "lin");
     await expect(service.getConversation("user-2", conversation.id)).rejects.toThrow();
+  });
+
+  it("updates and deletes a conversation only for its owner", async () => {
+    const prisma = createPrismaMock();
+    const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
+    const conversation = await service.createConversation("user-1", "lin");
+
+    await service.updateConversation("user-1", conversation.id, { title: "My chat", archived: true });
+    expect(prisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: conversation.id },
+      data: expect.objectContaining({ title: "My chat", archivedAt: expect.any(Date) })
+    }));
+
+    await expect(service.deleteConversation("user-2", conversation.id)).rejects.toThrow();
+    await expect(service.deleteConversation("user-1", conversation.id)).resolves.toEqual({ success: true });
   });
 });

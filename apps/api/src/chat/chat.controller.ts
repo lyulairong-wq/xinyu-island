@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -18,8 +18,8 @@ export class ChatController {
   }
 
   @Get("conversations")
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.chat.listConversations(user.id);
+  list(@CurrentUser() user: AuthenticatedUser, @Query("includeArchived") includeArchived?: string) {
+    return this.chat.listConversations(user.id, includeArchived === "true");
   }
 
   @Post("groups")
@@ -34,7 +34,12 @@ export class ChatController {
 
   @Patch("conversations/:conversationId/settings")
   updateSettings(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string, @Body() input: UpdateConversationDto) {
-    return this.chat.updateConversationSettings(user.id, conversationId, input.memoryEnabled);
+    return this.chat.updateConversation(user.id, conversationId, input);
+  }
+
+  @Delete("conversations/:conversationId")
+  remove(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string) {
+    return this.chat.deleteConversation(user.id, conversationId);
   }
 
   @Post("conversations/:conversationId/messages")

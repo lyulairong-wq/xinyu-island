@@ -63,13 +63,14 @@ model Conversation {
   kind      String    @default("single")
   title     String?
   memoryEnabled Boolean @default(false)
+  archivedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
   members   ConversationMember[]
 
-  @@index([userId, updatedAt])
+  @@index([userId, archivedAt, updatedAt])
 }
 
 model PrivateContact {

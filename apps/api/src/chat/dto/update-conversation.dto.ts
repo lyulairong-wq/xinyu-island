@@ -1,6 +1,16 @@
-import { IsBoolean } from "class-validator";
+import { IsBoolean, IsOptional, IsString, Length } from "class-validator";
 
 export class UpdateConversationDto {
+  @IsOptional()
   @IsBoolean()
-  memoryEnabled!: boolean;
+  memoryEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 80)
+  title?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  archived?: boolean;
 }

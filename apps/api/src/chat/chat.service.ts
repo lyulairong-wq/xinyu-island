@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { MockAiProvider, OpenAiCompatibleProvider, type AiProvider } from "@xinyu/ai";
 import { evaluateMessage } from "@xinyu/safety";
 import { PrismaService } from "../prisma/prisma.service";
@@ -45,14 +45,29 @@ export class ChatService {
     return { ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId) };
   }
 
-  async listConversations(userId: string) {
-    const conversations = await this.prisma.conversation.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, contactId: true, kind: true, title: true, memoryEnabled: true, updatedAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { content: true } } } });
+  async listConversations(userId: string, includeArchived = false) {
+    const conversations = await this.prisma.conversation.findMany({ where: { userId, ...(includeArchived ? {} : { archivedAt: null }) }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, contactId: true, kind: true, title: true, memoryEnabled: true, archivedAt: true, updatedAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { content: true } } } });
     return Promise.all(conversations.map(async (conversation) => ({ ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId), preview: conversation.messages[0]?.content ?? "尚未开始聊天" })));
   }
 
-  async updateConversationSettings(userId: string, conversationId: string, memoryEnabled: boolean) {
+  async updateConversation(userId: string, conversationId: string, input: { memoryEnabled?: boolean; title?: string; archived?: boolean }) {
     const existing = await this.getOwnedConversation(userId, conversationId);
-    return this.prisma.conversation.update({ where: { id: existing.id }, data: { memoryEnabled }, select: { id: true, memoryEnabled: true } });
+    if (input.memoryEnabled === undefined && input.title === undefined && input.archived === undefined) throw new BadRequestException("At least one conversation setting is required");
+    return this.prisma.conversation.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.memoryEnabled === undefined ? {} : { memoryEnabled: input.memoryEnabled }),
+        ...(input.title === undefined ? {} : { title: input.title.trim() }),
+        ...(input.archived === undefined ? {} : { archivedAt: input.archived ? new Date() : null })
+      },
+      select: { id: true, title: true, memoryEnabled: true, archivedAt: true }
+    });
+  }
+
+  async deleteConversation(userId: string, conversationId: string) {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    await this.prisma.conversation.delete({ where: { id: existing.id } });
+    return { success: true };
   }
 
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
