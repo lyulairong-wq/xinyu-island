@@ -31,8 +31,11 @@ describe("ChatService", () => {
     const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
     const conversation = await service.createConversation("user-1", "lin");
     const result = await service.sendMessage("user-1", conversation.id, { content: "你好", mode: "free", memoryEnabled: false });
-    expect(result.assistantMessage.role).toBe("assistant");
-    expect(result.assistantMessage.content).toContain("林屿");
+    expect("assistantMessage" in result).toBe(true);
+    if ("assistantMessage" in result) {
+      expect(result.assistantMessage.role).toBe("assistant");
+      expect(result.assistantMessage.content).toContain("林屿");
+    }
     expect(result.chargedTokens).toBe(0);
     expect(prisma.message.create).toHaveBeenCalledTimes(2);
   });

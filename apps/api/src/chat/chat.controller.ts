@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { ChatService } from "./chat.service";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { UpdateConversationDto } from "./dto/update-conversation.dto";
+import { CreateGroupDto } from "./dto/create-group.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("chat")
@@ -14,6 +15,11 @@ export class ChatController {
   @Post("conversations")
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: { contactId: string; memoryEnabled?: boolean }) {
     return this.chat.createConversation(user.id, body.contactId, body.memoryEnabled);
+  }
+
+  @Post("groups")
+  createGroup(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateGroupDto) {
+    return this.chat.createGroup(user.id, input.contactIds, input.memoryEnabled);
   }
 
   @Get("conversations/:conversationId")
