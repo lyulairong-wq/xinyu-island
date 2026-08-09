@@ -17,6 +17,11 @@ export class ChatController {
     return this.chat.createConversation(user.id, body.contactId, body.memoryEnabled);
   }
 
+  @Get("conversations")
+  list(@CurrentUser() user: AuthenticatedUser) {
+    return this.chat.listConversations(user.id);
+  }
+
   @Post("groups")
   createGroup(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateGroupDto) {
     return this.chat.createGroup(user.id, input.contactIds, input.memoryEnabled);

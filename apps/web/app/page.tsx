@@ -13,6 +13,7 @@ type User = { nickname: string; email: string; ageBand: string };
 type Contact = { id: string; name: string; tagline: string; description: string; avatar: string; tone: string; type?: "official" | "private"; canDelete?: boolean };
 type Message = { id: string; role: "user" | "assistant"; content: string; mode?: "free" | "token"; createdAt: string };
 type Memory = { id: string; contactId: string; fact: string; sensitivity: "normal" | "sensitive" };
+type ConversationSummary = { id: string; kind: string; contact: Contact; preview: string; updatedAt: string; memoryEnabled: boolean };
 
 export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -80,6 +81,7 @@ function RegisterForm({ onSuccess, onMessage }: { onSuccess: (user: User) => voi
 function ChatHome({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [activeNav, setActiveNav] = useState<"chat" | "contacts" | "apps" | "me">("chat");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [history, setHistory] = useState<ConversationSummary[]>([]);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [conversationId, setConversationId] = useState("");
   const [memoryEnabled, setMemoryEnabled] = useState(false);
@@ -90,6 +92,7 @@ function ChatHome({ user, onLogout }: { user: User; onLogout: () => void }) {
   const token = typeof window !== "undefined" ? localStorage.getItem("xinyu_access_token") : null;
 
   useEffect(() => { void fetch(`${API_URL}/contacts`, { headers: { Authorization: `Bearer ${token ?? ""}` } }).then((response) => response.json()).then(setContacts).catch(() => setNotice("暂时无法加载联系人")); }, [token]);
+  useEffect(() => { void fetch(`${API_URL}/chat/conversations`, { headers: { Authorization: `Bearer ${token ?? ""}` } }).then((response) => response.ok ? response.json() : []).then(setHistory).catch(() => undefined); }, [token]);
 
   const openContact = async (contact: Contact) => {
     setSelected(contact); setMessages([]); setNotice("");
@@ -98,8 +101,11 @@ function ChatHome({ user, onLogout }: { user: User; onLogout: () => void }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? "无法创建对话");
       setConversationId(data.id); setMemoryEnabled(Boolean(data.memoryEnabled));
+      void refreshHistory();
     } catch (error) { setNotice(error instanceof Error ? error.message : "暂时无法创建对话"); }
   };
+  const refreshHistory = async () => { const response = await fetch(`${API_URL}/chat/conversations`, { headers: { Authorization: `Bearer ${token ?? ""}` } }); if (response.ok) setHistory(await response.json() as ConversationSummary[]); };
+  const openHistory = async (item: ConversationSummary) => { const response = await fetch(`${API_URL}/chat/conversations/${item.id}`, { headers: { Authorization: `Bearer ${token ?? ""}` } }); if (!response.ok) return; const data = await response.json(); setConversationId(item.id); setSelected(data.contact as Contact); setMessages(data.messages as Message[]); setMemoryEnabled(Boolean(data.memoryEnabled)); setActiveNav("chat"); };
 
   const send = async (event: FormEvent) => {
     event.preventDefault(); if (!content.trim() || !conversationId) return;
@@ -114,7 +120,7 @@ function ChatHome({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   const refreshContacts = async () => { const response = await fetch(`${API_URL}/contacts`, { headers: { Authorization: `Bearer ${token ?? ""}` } }); if (response.ok) setContacts(await response.json() as Contact[]); };
   const openGroup = (id: string, members: Contact[]) => { setConversationId(id); setSelected({ id, name: "多人讨论组", tagline: `${members.map((member) => member.name).join("、")} · 顺序回复`, description: "AI 联系人将按设定顺序参与讨论。", avatar: "组", tone: "" }); setMessages([]); setMemoryEnabled(false); setActiveNav("chat"); };
-  const contentView = activeNav === "contacts" ? <ContactsPanel contacts={contacts} token={token} onRefresh={refreshContacts} onGroupCreated={openGroup} /> : activeNav === "me" ? <MemoryPanel contacts={contacts} token={token} /> : activeNav === "apps" ? <LifeMirrorPanel /> : selected ? <div className="conversation"><div className="contact-intro"><span className="contact-avatar">{selected.avatar}</span><div><b>{selected.name}</b><p>{selected.tagline} · {selected.description}</p></div><button className={`memory-toggle ${memoryEnabled ? "on" : ""}`} onClick={() => void toggleConversationMemory()}>{memoryEnabled ? "记忆已开" : "记忆已关"}</button></div><div className="message-list">{messages.length === 0 && <p className="conversation-empty">从一句简单的问候开始吧。</p>}{messages.map((message) => <div className={`bubble ${message.role}`} key={message.id}>{message.content}</div>)}</div>{notice && <p className="chat-notice">{notice}</p>}<form className="composer" onSubmit={send}><input value={content} onChange={(event) => setContent(event.target.value)} placeholder={`和 ${selected.name} 说点什么…`} maxLength={4000} /><button type="submit">发送</button></form></div> : <div className="welcome"><div className="welcome-orb">✦</div><h3>欢迎来到心屿，{user.nickname}</h3><p>选择一个 AI 联系人，开始一段轻松的对话。</p><div className="contact-grid">{contacts.map((contact) => <button className="contact-card" onClick={() => void openContact(contact)} key={contact.id}><span className="contact-avatar">{contact.avatar}</span><span><b>{contact.name}</b><small>{contact.tagline}</small></span></button>)}</div></div>;
+  const contentView = activeNav === "contacts" ? <ContactsPanel contacts={contacts} token={token} onRefresh={refreshContacts} onGroupCreated={openGroup} /> : activeNav === "me" ? <MemoryPanel contacts={contacts} token={token} /> : activeNav === "apps" ? <LifeMirrorPanel /> : selected ? <div className="conversation"><div className="contact-intro"><span className="contact-avatar">{selected.avatar}</span><div><b>{selected.name}</b><p>{selected.tagline} · {selected.description}</p></div><button className={`memory-toggle ${memoryEnabled ? "on" : ""}`} onClick={() => void toggleConversationMemory()}>{memoryEnabled ? "记忆已开" : "记忆已关"}</button></div><div className="message-list">{messages.length === 0 && <p className="conversation-empty">从一句简单的问候开始吧。</p>}{messages.map((message) => <div className={`bubble ${message.role}`} key={message.id}>{message.content}</div>)}</div>{notice && <p className="chat-notice">{notice}</p>}<form className="composer" onSubmit={send}><input value={content} onChange={(event) => setContent(event.target.value)} placeholder={`和 ${selected.name} 说点什么…`} maxLength={4000} /><button type="submit">发送</button></form></div> : <div className="welcome"><div className="welcome-orb">✦</div><h3>欢迎来到心屿，{user.nickname}</h3><p>选择一个 AI 联系人，开始一段轻松的对话。</p>{history.length > 0 && <div className="history-list"><p className="section-label">最近对话</p>{history.slice(0, 6).map((item) => <button className="history-row" onClick={() => void openHistory(item)} key={item.id}><span className="contact-avatar">{item.contact.avatar}</span><span><b>{item.contact.name}{item.kind === "group" ? " · 讨论组" : ""}</b><small>{item.preview}</small></span><time>{new Date(item.updatedAt).toLocaleDateString("zh-CN")}</time></button>)}</div>}<div className="contact-grid">{contacts.map((contact) => <button className="contact-card" onClick={() => void openContact(contact)} key={contact.id}><span className="contact-avatar">{contact.avatar}</span><span><b>{contact.name}</b><small>{contact.tagline}</small></span></button>)}</div></div>;
   return <main className="chat-shell"><aside className="sidebar"><div className="sidebar-brand"><span className="small-mark">心</span><span>心屿</span></div><nav><button className={`nav-item ${activeNav === "chat" ? "selected" : ""}`} onClick={() => setActiveNav("chat")}>▣ <span>聊天</span></button><button className={`nav-item ${activeNav === "contacts" ? "selected" : ""}`} onClick={() => setActiveNav("contacts")}>♧ <span>联系人</span></button><button className={`nav-item ${activeNav === "apps" ? "selected" : ""}`} onClick={() => setActiveNav("apps")}>◇ <span>应用</span></button><button className={`nav-item ${activeNav === "me" ? "selected" : ""}`} onClick={() => setActiveNav("me")}>◎ <span>我的</span></button></nav><button className="profile" onClick={onLogout}><span className="avatar">{user.nickname.slice(0, 1)}</span><span><b>{user.nickname}</b><small>退出登录</small></span></button></aside><section className="chat-main"><header><div><p className="eyebrow">{activeNav.toUpperCase()}</p><h2>{activeNav === "chat" ? selected?.name ?? "聊天" : activeNav === "contacts" ? "联系人" : activeNav === "apps" ? "应用" : "我的"}</h2></div>{activeNav === "chat" && <div className="mode-switch"><button className={mode === "free" ? "active" : ""} onClick={() => setMode("free")}>免费</button><button className={mode === "token" ? "active" : ""} onClick={() => setMode("token")}>Token</button></div>}</header>{contentView}</section></main>;
 }
 
