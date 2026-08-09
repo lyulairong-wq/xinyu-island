@@ -3,7 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { createHash } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
-import { hasRequiredConsents, normalizeEmail, REQUIRED_CONSENT_TYPES } from "./auth.policy";
+import { CURRENT_CONSENT_DOCUMENT_VERSION, hasRequiredConsents, normalizeEmail, REQUIRED_CONSENT_TYPES } from "./auth.policy";
 import type { RegisterDto } from "./dto/register.dto";
 import type { LoginDto } from "./dto/login.dto";
 
@@ -33,7 +33,7 @@ export class AuthService {
           .map((consent) => ({
             userId: created.id,
             consentType: consent.type,
-            documentVersion: consent.version,
+            documentVersion: CURRENT_CONSENT_DOCUMENT_VERSION,
             source: "web"
           }))
       });

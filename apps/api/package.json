@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "npm run build --workspace @xinyu/config && npm run build && concurrently -k \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"node --watch dist/main.js\"",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@nestjs/jwt": "11.0.1",
     "@xinyu/contracts": "0.1.0",
+    "@xinyu/config": "0.1.0",
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-express": "11.1.28",

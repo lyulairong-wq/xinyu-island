@@ -83,6 +83,28 @@ describe("AuthService", () => {
     });
   });
 
+  it("persists the server-defined document version instead of a client-supplied version", async () => {
+    prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "user-1",
+      email: "user@example.com",
+      nickname: "Xinyu",
+      ageBand: "18_plus",
+      status: "active",
+      createdAt: new Date("2026-08-09T00:00:00.000Z")
+    });
+
+    await service.register({
+      ...baseInput,
+      consents: baseInput.consents.map((consent) => ({ ...consent, version: "obsolete-client-version" }))
+    });
+
+    expect(transaction.consentRecord.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ documentVersion: "1.0" })
+      ])
+    });
+  });
+
   it("looks up a normalized email before creating a login session", async () => {
     prisma.user.findUnique.mockResolvedValueOnce({ id: "user-1", status: "active", passwordHash: "password-hash" }).mockResolvedValueOnce({
       id: "user-1",

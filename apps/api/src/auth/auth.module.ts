@@ -5,7 +5,7 @@ import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 
 @Module({
-  imports: [JwtModule.register({ secret: process.env.JWT_SECRET ?? "xinyu-local-development-secret" })],
+  imports: [JwtModule.register({ secret: process.env.JWT_SECRET! })],
   controllers: [AuthController, MeController],
   providers: [AuthService, JwtAuthGuard],
   exports: [AuthService, JwtAuthGuard, JwtModule]
