@@ -56,13 +56,13 @@ export async function getCurrentUser(token: string): Promise<AuthUser> {
 }
 
 export async function logout(token: string): Promise<void> {
-  await request<unknown>("/auth/logout", {
+  await request<void>("/auth/logout", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` }
-  });
+  }, false);
 }
 
-async function request<T>(path: string, init: RequestInit): Promise<T> {
+async function request<T>(path: string, init: RequestInit, parseResponse = true): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, init);
@@ -71,6 +71,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   }
 
   if (!response.ok) throw await toApiError(response);
+  if (!parseResponse) return undefined as T;
   return response.json() as Promise<T>;
 }
 
