@@ -18,6 +18,11 @@
     "typecheck": "npm run build --workspace @xinyu/contracts && npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/config && npm run typecheck --workspace @xinyu/ai && npm run typecheck --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/api && npm run typecheck --workspace @xinyu/web",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test --workspace @xinyu/api",
+    "test:web": "npm run test --workspace @xinyu/web",
+    "test:ai": "npm run test --workspace @xinyu/ai",
+    "test:safety": "npm run test --workspace @xinyu/safety",
+    "verify": "npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run prisma:generate --workspace @xinyu/api",
     "db:migrate": "npm run prisma:migrate --workspace @xinyu/api"
   },
