@@ -2,15 +2,17 @@
 
 import React, { FormEvent, useEffect, useState } from "react";
 import { AuthGate } from "../components/auth/auth-gate";
+import {
+  buildConsentPayload,
+  ConsentChecklist,
+  EMPTY_CONSENT_SELECTION,
+  isConsentSelectionComplete,
+  type ConsentSelection
+} from "../components/auth/consent-checklist";
 import { login, logout, register, type AuthUser } from "../lib/auth-api";
 import { getBrowserTokenStorage } from "../lib/auth-session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
-const consentItems = [
-  ["terms", "用户协议"],
-  ["privacy", "隐私政策"],
-  ["entertainment_notice", "娱乐使用提示"]
-] as const;
 
 type User = AuthUser;
 type Contact = { id: string; name: string; tagline: string; description: string; avatar: string; tone: string; type?: "official" | "private"; canDelete?: boolean };
@@ -81,18 +83,18 @@ function LoginForm({ onSuccess, onMessage }: { onSuccess: (user: User) => void; 
 }
 
 function RegisterForm({ onSuccess, onMessage }: { onSuccess: (user: User) => void; onMessage: (message: string) => void }) {
-  const [consents, setConsents] = useState<Record<string, boolean>>({});
+  const [consents, setConsents] = useState<ConsentSelection>(EMPTY_CONSENT_SELECTION);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (consentItems.some(([key]) => !consents[key])) { onMessage("请先确认三项协议与娱乐使用提示"); return; }
+    if (!isConsentSelectionComplete(consents)) { onMessage("请先确认三项内部封闭测试版文档与娱乐使用提示"); return; }
     const form = new FormData(event.currentTarget);
     try {
-      const session = await register({ email: String(form.get("email")), password: String(form.get("password")), nickname: String(form.get("nickname")), ageBand: String(form.get("ageBand")), deviceLabel: "web", consents: consentItems.map(([type]) => ({ type, version: "1.0" })) });
+      const session = await register({ email: String(form.get("email")), password: String(form.get("password")), nickname: String(form.get("nickname")), ageBand: String(form.get("ageBand")), deviceLabel: "web", consents: buildConsentPayload(consents) });
       getBrowserTokenStorage()?.write(session.accessToken);
       onSuccess(session.user);
     } catch (error) { onMessage(error instanceof Error ? error.message : "暂时无法注册"); }
   };
-  return <form className="auth-form" onSubmit={submit}><label>昵称<input name="nickname" placeholder="给自己一个称呼" maxLength={40} required /></label><label>邮箱<input name="email" type="email" placeholder="you@example.com" required /></label><label>密码<input name="password" type="password" placeholder="至少 8 位" minLength={8} required /></label><label>年龄段<select name="ageBand" defaultValue="undisclosed"><option value="under_13">13 岁以下</option><option value="13_15">13–15 岁</option><option value="16_17">16–17 岁</option><option value="18_plus">18 岁以上</option><option value="undisclosed">暂不透露</option></select></label><div className="consent-list">{consentItems.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={Boolean(consents[key])} onChange={(event) => setConsents({ ...consents, [key]: event.target.checked })} />我已阅读并同意<span>{label}</span></label>)}</div><button className="primary-button" type="submit">创建心屿账号</button></form>;
+  return <form className="auth-form" onSubmit={submit}><label>昵称<input name="nickname" placeholder="给自己一个称呼" maxLength={40} required /></label><label>邮箱<input name="email" type="email" placeholder="you@example.com" required /></label><label>密码<input name="password" type="password" placeholder="至少 8 位" minLength={8} required /></label><label>年龄段<select name="ageBand" defaultValue="undisclosed"><option value="under_13">13 岁以下</option><option value="13_15">13–15 岁</option><option value="16_17">16–17 岁</option><option value="18_plus">18 岁以上</option><option value="undisclosed">暂不透露</option></select></label><ConsentChecklist value={consents} onChange={setConsents} /><button className="primary-button" type="submit" disabled={!isConsentSelectionComplete(consents)}>创建心屿账号</button></form>;
 }
 
 function ChatHome({ user, onLogout }: { user: User; onLogout: () => Promise<void> }) {
