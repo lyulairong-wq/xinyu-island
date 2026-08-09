@@ -15,4 +15,8 @@ describe("auth policy", () => {
     expect(hasRequiredConsents(["terms", "privacy", "entertainment_notice"])).toBe(true);
     expect(hasRequiredConsents(["terms", "privacy"])).toBe(false);
   });
+
+  it("does not let repeated consent types replace a required document", () => {
+    expect(hasRequiredConsents(["terms", "terms", "privacy"])).toBe(false);
+  });
 });

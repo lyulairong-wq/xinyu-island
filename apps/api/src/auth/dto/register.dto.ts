@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { IsArray, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, Length, MinLength, ValidateNested } from "class-validator";
 
 class ConsentDto {
@@ -12,6 +12,7 @@ class ConsentDto {
 }
 
 export class RegisterDto {
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsEmail()
   email!: string;
 

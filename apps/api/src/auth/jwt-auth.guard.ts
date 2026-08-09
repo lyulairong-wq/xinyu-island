@@ -16,7 +16,7 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwt.verifyAsync<{ sub?: string; sid?: string }>(header.slice(7));
       if (!payload.sub || !payload.sid) throw new Error("invalid payload");
       const session = await this.prisma.userSession.findFirst({
-        where: { id: payload.sid, userId: payload.sub, revokedAt: null }
+        where: { id: payload.sid, userId: payload.sub, revokedAt: null, user: { status: "active" } }
       });
       if (!session || session.expiresAt <= new Date()) throw new Error("expired session");
       request.user = { id: payload.sub, sessionId: payload.sid };
