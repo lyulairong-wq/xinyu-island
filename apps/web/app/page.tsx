@@ -140,6 +140,6 @@ const mirrorScenarios = [
 ];
 
 function LifeMirrorPanel() {
-  const [scenarioId, setScenarioId] = useState(mirrorScenarios[0].id); const [choice, setChoice] = useState(""); const scenario = mirrorScenarios.find((item) => item.id === scenarioId) ?? mirrorScenarios[0];
+  const firstScenario = mirrorScenarios[0]!; const [scenarioId, setScenarioId] = useState(firstScenario.id); const [choice, setChoice] = useState(""); const scenario = mirrorScenarios.find((item) => item.id === scenarioId) ?? firstScenario;
   return <div className="mirror-page"><div className="mirror-heading"><div><p className="eyebrow">LIFE MIRROR</p><h3>人生镜像副本</h3><p>体验不同人生设定下的虚构分支与可能发展。</p></div><span className="mirror-disclaimer">仅供娱乐体验<br />不代表现实预测或行动建议</span></div><div className="mirror-scenarios">{mirrorScenarios.map((item) => <button className={item.id === scenario.id ? "selected" : ""} onClick={() => { setScenarioId(item.id); setChoice(""); }} key={item.id}>{item.title}</button>)}</div><div className="mirror-card"><span className="mirror-orb">◇</span><p className="mirror-label">当前场景</p><h4>{scenario.title}</h4><p className="mirror-intro">{scenario.intro}</p>{choice ? <div className="mirror-result"><small>这条分支继续展开</small><p>{choice}</p><button onClick={() => setChoice("")}>重新选择</button></div> : <div className="mirror-choices">{scenario.choices.map((item) => <button onClick={() => setChoice(item.result)} key={item.label}>{item.label}<span>→</span></button>)}</div>}</div></div>;
 }
