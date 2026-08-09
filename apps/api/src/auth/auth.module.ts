@@ -8,6 +8,6 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
   imports: [JwtModule.register({ secret: process.env.JWT_SECRET ?? "xinyu-local-development-secret" })],
   controllers: [AuthController, MeController],
   providers: [AuthService, JwtAuthGuard],
-  exports: [AuthService]
+  exports: [AuthService, JwtAuthGuard, JwtModule]
 })
 export class AuthModule {}
