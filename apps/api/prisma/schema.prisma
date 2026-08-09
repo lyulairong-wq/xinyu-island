@@ -135,6 +135,7 @@ model TokenUsageRecord {
 model Message {
   id             String       @id @default(cuid())
   conversationId String
+  quotedMessageId String?
   role           String
   content        String
   mode           String       @default("free")
@@ -142,8 +143,11 @@ model Message {
   outputTokens   Int?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  quotedMessage  Message?     @relation("MessageQuote", fields: [quotedMessageId], references: [id], onDelete: SetNull)
+  quotedBy       Message[]    @relation("MessageQuote")
 
   @@index([conversationId, createdAt])
+  @@index([quotedMessageId])
 }
 
 model ConversationMember {

@@ -22,7 +22,9 @@ function createPrismaMock() {
       })
     },
     message: {
-      create: vi.fn(async ({ data }: { data: { conversationId: string; role: string; content: string; mode: string } }) => ({ id: `${data.role}-1`, ...data, createdAt: new Date() }))
+      create: vi.fn(async ({ data }: { data: { conversationId: string; role: string; content: string; mode: string; quotedMessageId?: string } }) => ({ id: `${data.role}-1`, ...data, createdAt: new Date() })),
+      findFirst: vi.fn(async () => ({ id: "quoted-1", content: "original message" })),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id }))
     }
   };
 }
@@ -65,5 +67,27 @@ describe("ChatService", () => {
 
     await expect(service.deleteConversation("user-2", conversation.id)).rejects.toThrow();
     await expect(service.deleteConversation("user-1", conversation.id)).resolves.toEqual({ success: true });
+  });
+
+  it("stores a quoted message and includes it in generation context", async () => {
+    const prisma = createPrismaMock();
+    const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
+    const conversation = await service.createConversation("user-1", "lin");
+
+    await service.sendMessage("user-1", conversation.id, { content: "follow up", mode: "free", quoteMessageId: "quoted-1" });
+
+    expect(prisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ quotedMessageId: "quoted-1" })
+    }));
+  });
+
+  it("deletes a message only within an owned conversation", async () => {
+    const prisma = createPrismaMock();
+    const service = new ChatService(prisma as never, contactsMock as never, usageMock as never);
+    const conversation = await service.createConversation("user-1", "lin");
+
+    await expect(service.deleteMessage("user-2", conversation.id, "message-1")).rejects.toThrow();
+    await expect(service.deleteMessage("user-1", conversation.id, "message-1")).resolves.toEqual({ success: true });
+    expect(prisma.message.delete).toHaveBeenCalledWith({ where: { id: "quoted-1" } });
   });
 });

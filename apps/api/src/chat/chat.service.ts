@@ -73,14 +73,18 @@ export class ChatService {
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
     const contact = await this.contacts.resolve(userId, conversation.contactId);
-    const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode } });
+    const quotedMessage = input.quoteMessageId ? await this.prisma.message.findFirst({ where: { id: input.quoteMessageId, conversationId }, select: { id: true, content: true } }) : null;
+    if (input.quoteMessageId && !quotedMessage) throw new NotFoundException("Quoted message was not found in this conversation");
+    const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode, ...(quotedMessage ? { quotedMessageId: quotedMessage.id } : {}) } });
+    const generationInput = quotedMessage ? `Quoted message: ${quotedMessage.content}\n\nUser message: ${input.content}` : input.content;
+    input.content = generationInput;
     const safety = evaluateMessage(input.content);
     if (safety.action === "block") {
       const assistantMessage = await this.prisma.message.create({ data: { conversationId, role: "assistant", content: "这类内容我不能提供具体指导。心屿仅用于娱乐和陪伴；如果你正面临现实中的紧急风险，请联系当地紧急服务或可信任的人。", mode: input.mode } });
       return { userMessage, assistantMessage, mode: input.mode, chargedTokens: 0, blocked: true, category: safety.category, notice: "该问题涉及高风险内容，已停止提供具体建议。" };
     }
-    if (conversation.kind === "group") return this.sendGroupMessage(userId, conversation, input, userMessage);
-    const estimatedInputTokens = Math.ceil(input.content.trim().length / 2);
+    if (conversation.kind === "group") return this.sendGroupMessage(userId, conversation, { ...input, content: generationInput }, userMessage);
+    const estimatedInputTokens = Math.ceil(generationInput.trim().length / 2);
     await this.usage.assertAvailable(userId, input.mode, estimatedInputTokens + 200);
     const memories = conversation.memoryEnabled ? await this.prisma.contactMemory.findMany({ where: { userId, contactId: conversation.contactId, sensitivity: "normal" }, orderBy: { updatedAt: "desc" }, take: 20 }) : [];
     const memoryContext = memories.length ? `仅参考以下用户明确保存的普通记忆：${memories.map((memory) => memory.fact).join("；")}` : "当前不使用长期记忆。";
@@ -131,6 +135,14 @@ export class ChatService {
     let text = "";
     for await (const event of this.mockProvider.generate({ conversationId, content, mode: "free" })) if (event.type === "delta" && event.text) text += event.text;
     return text.replace("心屿 AI", name);
+  }
+
+  async deleteMessage(userId: string, conversationId: string, messageId: string) {
+    await this.getOwnedConversation(userId, conversationId);
+    const message = await this.prisma.message.findFirst({ where: { id: messageId, conversationId }, select: { id: true } });
+    if (!message) throw new NotFoundException("Message was not found in this conversation");
+    await this.prisma.message.delete({ where: { id: message.id } });
+    return { success: true };
   }
 
   private async getOwnedConversation(userId: string, conversationId: string) {

@@ -11,4 +11,8 @@ export class SendMessageDto {
   @IsOptional()
   @IsBoolean()
   memoryEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  quoteMessageId?: string;
 }

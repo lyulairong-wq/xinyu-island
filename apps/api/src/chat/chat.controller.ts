@@ -46,4 +46,9 @@ export class ChatController {
   async send(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string, @Body() input: SendMessageDto) {
     return this.chat.sendMessage(user.id, conversationId, input);
   }
+
+  @Delete("conversations/:conversationId/messages/:messageId")
+  removeMessage(@CurrentUser() user: AuthenticatedUser, @Param("conversationId") conversationId: string, @Param("messageId") messageId: string) {
+    return this.chat.deleteMessage(user.id, conversationId, messageId);
+  }
 }
