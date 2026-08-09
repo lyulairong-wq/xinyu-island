@@ -1,12 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { MockAiProvider, OpenAiCompatibleProvider, type AiProvider } from "@xinyu/ai";
-import { randomUUID } from "node:crypto";
+import { evaluateMessage } from "@xinyu/safety";
 import { PrismaService } from "../prisma/prisma.service";
 import { ContactsService } from "../contacts/contacts.service";
 import { UsageService } from "../usage/usage.service";
 import type { SendMessageDto } from "./dto/send-message.dto";
-
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; mode?: "free" | "token"; createdAt: Date };
 
 @Injectable()
 export class ChatService {
@@ -19,10 +17,11 @@ export class ChatService {
     this.freeProvider = endpoint && model ? new OpenAiCompatibleProvider(endpoint, model, Number(process.env.FREE_MODEL_TIMEOUT_MS ?? 30_000)) : this.mockProvider;
   }
 
-  async createConversation(userId: string, contactId: string) {
+  async createConversation(userId: string, contactId: string, memoryEnabled?: boolean) {
     const contact = await this.contacts.resolve(userId, contactId);
-    const conversation = await this.prisma.conversation.create({ data: { userId, contactId, kind: "single" } });
-    return { id: conversation.id, contact };
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { defaultMemoryEnabled: true } });
+    const conversation = await this.prisma.conversation.create({ data: { userId, contactId, kind: "single", memoryEnabled: memoryEnabled ?? user?.defaultMemoryEnabled ?? false } });
+    return { id: conversation.id, contact, memoryEnabled: conversation.memoryEnabled };
   }
 
   async getConversation(userId: string, conversationId: string) {
@@ -30,30 +29,37 @@ export class ChatService {
     return { ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId) };
   }
 
+  async updateConversationSettings(userId: string, conversationId: string, memoryEnabled: boolean) {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    return this.prisma.conversation.update({ where: { id: existing.id }, data: { memoryEnabled }, select: { id: true, memoryEnabled: true } });
+  }
+
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
     const contact = await this.contacts.resolve(userId, conversation.contactId);
+    const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode } });
+    const safety = evaluateMessage(input.content);
+    if (safety.action === "block") {
+      const assistantMessage = await this.prisma.message.create({ data: { conversationId, role: "assistant", content: "这类内容我不能提供具体指导。心屿仅用于娱乐和陪伴；如果你正面临现实中的紧急风险，请联系当地紧急服务或可信任的人。", mode: input.mode } });
+      return { userMessage, assistantMessage, mode: input.mode, chargedTokens: 0, blocked: true, category: safety.category, notice: "该问题涉及高风险内容，已停止提供具体建议。" };
+    }
     const estimatedInputTokens = Math.ceil(input.content.trim().length / 2);
     await this.usage.assertAvailable(userId, input.mode, estimatedInputTokens + 200);
-    const userMessage = await this.prisma.message.create({ data: { conversationId, role: "user", content: input.content.trim(), mode: input.mode } });
-    const provider = input.mode === "free"
-      ? (this.freeProvider === this.mockProvider ? new MockAiProvider(contact.name) : this.freeProvider)
-      : new MockAiProvider(contact.name);
+    const memories = conversation.memoryEnabled ? await this.prisma.contactMemory.findMany({ where: { userId, contactId: conversation.contactId, sensitivity: "normal" }, orderBy: { updatedAt: "desc" }, take: 20 }) : [];
+    const memoryContext = memories.length ? `仅参考以下用户明确保存的普通记忆：${memories.map((memory) => memory.fact).join("；")}` : "当前不使用长期记忆。";
+    const provider = input.mode === "free" ? (this.freeProvider === this.mockProvider ? new MockAiProvider(contact.name) : this.freeProvider) : new MockAiProvider(contact.name);
     let text = "";
     let failed = false;
-    for await (const event of provider.generate({ conversationId, content: input.content, mode: input.mode, systemPrompt: `你是${contact.name}，你的互动风格是${contact.tone}。你只能提供娱乐和陪伴，不提供医疗、法律、财务或其他需要承担责任的具体建议。` })) {
+    for await (const event of provider.generate({ conversationId, content: input.content, mode: input.mode, systemPrompt: `你是${contact.name}，互动风格是${contact.tone}。你只能提供娱乐和陪伴，不提供医疗、法律、财务或其他需要承担责任的具体建议。${memoryContext}` })) {
       if (event.type === "delta" && event.text) text += event.text;
       if (event.type === "failed") failed = true;
     }
     if (!text || failed) text = await this.collectMockReply(conversationId, input.content, contact.name);
     const assistantMessage = await this.prisma.message.create({ data: { conversationId, role: "assistant", content: text, mode: input.mode } });
-    const inputTokens = estimatedInputTokens;
     const outputTokens = Math.ceil(text.length / 2);
-    await this.usage.consume(userId, { mode: input.mode, conversationId, messageId: assistantMessage.id, inputTokens, outputTokens });
-    const notice = input.mode === "free"
-      ? (this.freeProvider === this.mockProvider ? "当前使用免费 Mock 回复，仅供娱乐参考。" : "当前使用免费开源模型回复，仅供娱乐参考。")
-      : "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。";
-    return { userMessage, assistantMessage, mode: input.mode, chargedTokens: input.mode === "token" ? inputTokens + outputTokens : 0, notice, estimatedResourceTokens: inputTokens + outputTokens };
+    await this.usage.consume(userId, { mode: input.mode, conversationId, messageId: assistantMessage.id, inputTokens: estimatedInputTokens, outputTokens });
+    const notice = input.mode === "free" ? (this.freeProvider === this.mockProvider ? "当前使用免费 Mock 回复，仅供娱乐参考。" : "当前使用免费开源模型回复，仅供娱乐参考。") : "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。";
+    return { userMessage, assistantMessage, mode: input.mode, chargedTokens: input.mode === "token" ? estimatedInputTokens + outputTokens : 0, notice, estimatedResourceTokens: estimatedInputTokens + outputTokens };
   }
 
   private async collectMockReply(conversationId: string, content: string, name: string) {

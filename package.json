@@ -15,7 +15,7 @@
     "dev:api": "npm run dev --workspace @xinyu/api",
     "dev:web": "npm run dev --workspace @xinyu/web",
     "build": "npm run build --workspace @xinyu/contracts && npm run build --workspace @xinyu/config && npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety && npm run build --workspace @xinyu/api && npm run build --workspace @xinyu/web",
-    "typecheck": "npm run build --workspace @xinyu/contracts && npm run build --workspace @xinyu/ai && npm run typecheck --workspace @xinyu/config && npm run typecheck --workspace @xinyu/ai && npm run typecheck --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/api && npm run typecheck --workspace @xinyu/web",
+    "typecheck": "npm run build --workspace @xinyu/contracts && npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/config && npm run typecheck --workspace @xinyu/ai && npm run typecheck --workspace @xinyu/safety && npm run typecheck --workspace @xinyu/api && npm run typecheck --workspace @xinyu/web",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "db:generate": "npm run prisma:generate --workspace @xinyu/api",

@@ -4,6 +4,7 @@ import { ChatService } from "./chat.service";
 function createPrismaMock() {
   const conversations = new Map<string, { id: string; userId: string; contactId: string; messages: unknown[] }>();
   return {
+    user: { findUnique: vi.fn(async () => ({ defaultMemoryEnabled: false })) },
     conversation: {
       create: vi.fn(async ({ data }: { data: { userId: string; contactId: string } }) => {
         const item = { id: "conversation-1", ...data, messages: [] };
