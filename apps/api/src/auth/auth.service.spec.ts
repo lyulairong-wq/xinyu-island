@@ -98,7 +98,7 @@ describe("AuthService", () => {
       accessToken: "access-token"
     });
 
-    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: "user@example.com" } });
+    expect(prisma.user.findUnique).toHaveBeenNthCalledWith(1, { where: { email: "user@example.com" } });
   });
 
   it("revokes only the named session owned by the current user", async () => {
