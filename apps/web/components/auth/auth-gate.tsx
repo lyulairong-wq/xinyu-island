@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, type ReactNode } from "react";
-import { getCurrentUser, type AuthUser } from "../../lib/auth-api";
+import { ApiError, getCurrentUser, type AuthUser } from "../../lib/auth-api";
 import { getBrowserTokenStorage, type TokenStorage } from "../../lib/auth-session";
 
 type AuthGateProps = {
@@ -16,6 +16,7 @@ type AuthGateProps = {
 type AuthState =
   | { kind: "loading" }
   | { kind: "anonymous" }
+  | { kind: "error"; message: string }
   | { kind: "authenticated"; user: AuthUser };
 
 export function AuthGate({
@@ -29,6 +30,7 @@ export function AuthGate({
   const browserStorage = useMemo(() => getBrowserTokenStorage(), []);
   const storage = injectedStorage ?? browserStorage;
   const [state, setState] = useState<AuthState>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const token = storage?.read();
@@ -44,18 +46,41 @@ export function AuthGate({
         setState({ kind: "authenticated", user });
         onAuthenticated?.(user);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return;
-        storage?.clear();
-        setState({ kind: "anonymous" });
+        if (isInvalidAuthenticationResponse(error)) {
+          storage?.clear();
+          setState({ kind: "anonymous" });
+          return;
+        }
+        setState({ kind: "error", message: temporaryFailureMessage(error) });
       });
 
     return () => {
       active = false;
     };
-  }, [loadUser, onAuthenticated, storage]);
+  }, [attempt, loadUser, onAuthenticated, storage]);
 
   if (state.kind === "loading") return loading;
   if (state.kind === "anonymous") return anonymous;
+  if (state.kind === "error") {
+    return <div role="alert">
+      <p>{state.message}</p>
+      <button type="button" onClick={() => {
+        setState({ kind: "loading" });
+        setAttempt((currentAttempt) => currentAttempt + 1);
+      }}>重试</button>
+    </div>;
+  }
   return authenticated(state.user);
+}
+
+function isInvalidAuthenticationResponse(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
+function temporaryFailureMessage(error: unknown): string {
+  return error instanceof ApiError
+    ? error.message
+    : "暂时无法验证登录状态，请重试";
 }

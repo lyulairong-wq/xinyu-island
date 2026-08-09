@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { AuthGate } from "../components/auth/auth-gate";
 import { login, logout, register, type AuthUser } from "../lib/auth-api";
 import { getBrowserTokenStorage } from "../lib/auth-session";
