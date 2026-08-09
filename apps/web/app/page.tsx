@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { getCurrentUser, login, logout, register, type AuthUser } from "../lib/auth-api";
+import { AuthGate } from "../components/auth/auth-gate";
+import { login, logout, register, type AuthUser } from "../lib/auth-api";
 import { getBrowserTokenStorage } from "../lib/auth-session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -21,21 +22,6 @@ export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [user, setUser] = useState<User | null>(null);
   const [message, setMessage] = useState("");
-  const [sessionRestored, setSessionRestored] = useState(false);
-
-  useEffect(() => {
-    const storage = getBrowserTokenStorage();
-    const token = storage?.read();
-    if (!token) {
-      setSessionRestored(true);
-      return;
-    }
-
-    void getCurrentUser(token)
-      .then(setUser)
-      .catch(() => storage?.clear())
-      .finally(() => setSessionRestored(true));
-  }, []);
 
   const handleLogout = async () => {
     const storage = getBrowserTokenStorage();
@@ -50,11 +36,14 @@ export default function HomePage() {
     }
   };
 
-  if (!sessionRestored) return null;
   if (user) return <ChatHome user={user} onLogout={handleLogout} />;
 
   return (
-    <main className="entry-shell">
+    <AuthGate
+      onAuthenticated={setUser}
+      loading={<div aria-live="polite" role="status" />}
+      authenticated={(restoredUser) => <ChatHome user={restoredUser} onLogout={handleLogout} />}
+      anonymous={<main className="entry-shell">
       <section className="brand-panel">
         <div className="island-mark">心</div>
         <p className="eyebrow">XINYU · ISLAND</p>
@@ -73,7 +62,8 @@ export default function HomePage() {
         {mode === "login" ? <LoginForm onSuccess={setUser} onMessage={setMessage} /> : <RegisterForm onSuccess={setUser} onMessage={setMessage} />}
         {message && <p className="form-message">{message}</p>}
       </section>
-    </main>
+    </main>}
+    />
   );
 }
 
