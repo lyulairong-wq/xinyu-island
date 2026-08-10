@@ -110,6 +110,10 @@ function freeMessage(overrides: Partial<SendMessageDto> = {}): SendMessageDto {
   return { content: "你好", mode: "free", requestId: REQUEST_ID, memoryEnabled: false, ...overrides };
 }
 
+function tokenMessage(overrides: Partial<SendMessageDto> = {}): SendMessageDto {
+  return { content: "你好", mode: "token", requestId: REQUEST_ID, memoryEnabled: false, ...overrides };
+}
+
 describe("SendMessageDto", () => {
   it("rejects a non-UUID generation request id", async () => {
     const input = Object.assign(new SendMessageDto(), freeMessage({ requestId: "request-1" }));
@@ -173,6 +177,22 @@ describe("ChatService", () => {
     });
     expect(usage.finalizeFree).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ chargedTokens: 0, provider: "primary", degraded: false });
+  });
+
+  it("preserves legacy token mock generation and 200-token preauthorization", async () => {
+    const { service, usage, gateway } = createHarness();
+    const conversation = await service.createConversation("user-1", "lin");
+    vi.stubEnv("FREE_MAX_OUTPUT_TOKENS", "999");
+
+    await service.sendMessage("user-1", conversation.id, tokenMessage());
+
+    expect(gateway.generate).not.toHaveBeenCalled();
+    expect(usage.assertAvailable).toHaveBeenCalledWith("user-1", "token", 201);
+    expect(usage.consume).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      mode: "token",
+      conversationId: conversation.id,
+      inputTokens: 1
+    }));
   });
 
   it("does not invoke the gateway when a repeated request id is rejected", async () => {

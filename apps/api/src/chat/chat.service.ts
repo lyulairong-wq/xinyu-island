@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { MockAiProvider } from "@xinyu/ai";
 import { loadConfig } from "@xinyu/config";
 import { evaluateMessage } from "@xinyu/safety";
 import { PrismaService } from "../prisma/prisma.service";
@@ -7,6 +8,8 @@ import { ModelGatewayService, type ModelGatewayResult } from "../model-gateway/m
 import { estimateTokens } from "../model-gateway/model-limits";
 import { UsageService, type FreeReservation } from "../usage/usage.service";
 import type { SendMessageDto } from "./dto/send-message.dto";
+
+const LEGACY_TOKEN_OUTPUT_ESTIMATE = 200;
 
 type MessageConversation = {
   id: string;
@@ -116,11 +119,124 @@ export class ChatService {
       };
     }
 
+    if (input.mode === "token") {
+      if (conversation.kind === "group") {
+        return this.sendLegacyTokenGroupMessage(userId, conversation as MessageConversation, input, content, generationInput, quotedMessage?.id);
+      }
+      return this.sendLegacyTokenSingleMessage(userId, conversation as MessageConversation, contact, input, content, generationInput, quotedMessage?.id);
+    }
+
     if (conversation.kind === "group") {
       return this.sendGroupMessage(userId, conversation as MessageConversation, input, content, generationInput, quotedMessage?.id, modelConfig.maxOutputTokens);
     }
 
     return this.sendSingleMessage(userId, conversation as MessageConversation, contact, input, content, generationInput, quotedMessage?.id, modelConfig.maxOutputTokens);
+  }
+
+  private async sendLegacyTokenSingleMessage(
+    userId: string,
+    conversation: MessageConversation,
+    contact: { name: string; tone: string },
+    input: SendMessageDto,
+    content: string,
+    generationInput: string,
+    quotedMessageId: string | undefined
+  ) {
+    const estimatedInputTokens = estimateTokens(generationInput);
+    const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
+    await this.usage.assertAvailable(userId, "token", estimatedInputTokens + LEGACY_TOKEN_OUTPUT_ESTIMATE);
+    const memoryContext = await this.memoryContext(userId, conversation);
+    const text = await this.generateLegacyTokenReply(conversation.id, generationInput, contact.name, contact.tone, memoryContext);
+    this.assertSafeOutput(text);
+    const assistantMessage = await this.prisma.message.create({
+      data: { conversationId: conversation.id, role: "assistant", content: text, mode: "token" }
+    });
+    const outputTokens = estimateTokens(text);
+    await this.usage.consume(userId, {
+      mode: "token",
+      conversationId: conversation.id,
+      messageId: assistantMessage.id,
+      inputTokens: estimatedInputTokens,
+      outputTokens
+    });
+    return {
+      userMessage,
+      assistantMessage,
+      mode: "token" as const,
+      chargedTokens: estimatedInputTokens + outputTokens,
+      notice: "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。",
+      estimatedResourceTokens: estimatedInputTokens + outputTokens
+    };
+  }
+
+  private async sendLegacyTokenGroupMessage(
+    userId: string,
+    conversation: MessageConversation,
+    input: SendMessageDto,
+    content: string,
+    generationInput: string,
+    quotedMessageId: string | undefined
+  ) {
+    const members = [...conversation.members].sort((a, b) => a.sortOrder - b.sortOrder);
+    const inputTokens = estimateTokens(generationInput);
+    const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
+    await this.usage.assertAvailable(userId, "token", inputTokens + LEGACY_TOKEN_OUTPUT_ESTIMATE * members.length);
+    const memoryContext = await this.memoryContext(userId, conversation);
+    const assistantMessages = [];
+    let outputTokens = 0;
+
+    for (const member of members) {
+      const contact = await this.contacts.resolve(userId, member.contactId);
+      const text = await this.generateLegacyTokenReply(conversation.id, generationInput, contact.name, contact.tone, memoryContext);
+      this.assertSafeOutput(text);
+      outputTokens += estimateTokens(text);
+      assistantMessages.push(await this.prisma.message.create({
+        data: { conversationId: conversation.id, role: "assistant", content: text, mode: "token" }
+      }));
+    }
+
+    await this.usage.consume(userId, {
+      mode: "token",
+      conversationId: conversation.id,
+      messageId: assistantMessages[0]!.id,
+      inputTokens,
+      outputTokens
+    });
+    return {
+      userMessage,
+      assistantMessages,
+      mode: "token" as const,
+      chargedTokens: inputTokens + outputTokens,
+      notice: "讨论组已按成员顺序回复，仅供娱乐参考。"
+    };
+  }
+
+  private async generateLegacyTokenReply(conversationId: string, content: string, name: string, tone: string, memoryContext: string) {
+    const provider = new MockAiProvider(name);
+    let text = "";
+    let failed = false;
+    for await (const event of provider.generate({
+      conversationId,
+      content,
+      mode: "token",
+      maxOutputTokens: LEGACY_TOKEN_OUTPUT_ESTIMATE,
+      systemPrompt: this.systemPrompt(name, tone, memoryContext)
+    })) {
+      if (event.type === "delta" && event.text) text += event.text;
+      if (event.type === "failed") failed = true;
+    }
+    if (!text || failed) {
+      text = "";
+      for await (const event of new MockAiProvider(name).generate({
+        conversationId,
+        content,
+        mode: "token",
+        maxOutputTokens: LEGACY_TOKEN_OUTPUT_ESTIMATE
+      })) {
+        if (event.type === "delta" && event.text) text += event.text;
+      }
+    }
+    return text;
   }
 
   private async sendSingleMessage(
