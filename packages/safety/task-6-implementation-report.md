@@ -127,3 +127,80 @@ Round 3 identified two remaining defects in the refusal handling introduced in r
 - Every changed path is under `packages/safety`.
 
 The requesting-code-review workflow was inspected again, but this session exposes no reviewer subagent tool. The local read-only audit checked the full scoped diff, preserved concrete expressions, allow-return placement, normalization order, test mutation coverage, and package-only status.
+
+## Round-4 approved design and implementation plan
+
+**Goal:** Replace positional refusal exemptions with a minimal fail-closed classifier that blocks normalized concrete risk requests regardless of refusal wording elsewhere.
+
+**Architecture:** Keep the existing per-category block expressions as a compatibility layer. Add one normalized concrete-action check per category and permit an exemption only when the complete structural text matches an anchored standalone refusal or condemnation. Risk matching uses NFKC plus whitespace, format-character, punctuation, and symbol removal; standalone-safe matching retains structure so quotes, questions, internal separators, and mixed clauses cannot qualify.
+
+**Tech stack:** TypeScript 5.9, Vitest 4, npm workspaces.
+
+**Global constraints:**
+
+- Modify and commit only paths under `packages/safety`.
+- Preserve every previously blocked corpus input, unsafe output, and reviewer probe.
+- Use only synthetic fixtures and never return or record raw evaluated content.
+- Keep the public `SafetyDecision` shape and `m1-safety-1.0.0` policy version stable.
+
+### Task 1: Establish the round-4 RED corpus
+
+**Files:** Modify `src/index.spec.ts`; exercise the real exported `evaluateMessage` function without mocks.
+
+- [x] Add a fixed literal table covering `给出`, `根据`, `说明`, `泄露`, `查询`, `返回`, `提供`, and `教` against treatment, self-harm/weapon methods or steps, system prompts, other-user conversations, and raw error response bodies.
+- [x] Include refusal-prefix, quote, question, separator, mixed-content, NFKC, zero-width, whitespace, punctuation-splitting, and symbol-splitting variants with literal expected categories.
+- [x] Replace broad refusal/redirection allow controls with literal standalone refusal and condemnation examples for all five categories.
+- [x] Add a synthetic sentinel assertion proving block decisions do not echo raw content.
+- [x] Run `npm.cmd run test:safety` and require behavior failures from the current refusal exemption, not syntax or setup errors.
+
+### Task 2: Implement the minimal fail-closed classifier
+
+**Files:** Modify `src/index.ts` and, only as required by the approved standalone-safe contract, `src/regression-cases.ts`.
+
+- [x] Remove positional refusal-context slicing and category-specific before/after inference.
+- [x] Add normalized concrete action-plus-topic detection that runs for every category.
+- [x] Add anchored per-category standalone refusal/condemnation patterns; allow optional declarative terminal punctuation but reject quotes, questions, internal separators, requests, and extra clauses.
+- [x] Keep all existing block patterns and stable category ordering.
+- [x] Run `npm.cmd run test:safety` until the round-4 corpus and all prior blocks pass.
+- [x] Run `npm.cmd run typecheck --workspace @xinyu/safety`.
+
+### Task 3: Verify, audit, and commit
+
+**Files:** Append exact evidence to this report; commit only package-scoped changes.
+
+- [x] Run `npm.cmd run test:safety`.
+- [x] Run `npm.cmd run test:api -- chat.service`.
+- [x] Run `npm.cmd test` for the full workspace test suite.
+- [x] Run `git diff --check`, inspect the complete diff, confirm every changed path is under `packages/safety`, and verify no fixture contains raw user content.
+- [x] Append RED, GREEN, verification, privacy, and scope evidence here.
+- [x] Commit with a focused safety-fix message and report the commit hash.
+
+## Round-4 evidence
+
+### RED
+
+- Baseline command before round-4 test edits: `npm.cmd run test:safety` — exit code 0; 171/171 tests passed.
+- Primary RED command: `npm.cmd run test:safety` — expected exit code 1; 200 tests discovered, 173 passed and 27 failed. Failures covered unsupported genuine standalone statements, every newly reclassified non-standalone refusal/condemnation, and refusal-adjacent reviewer probes using omitted action vocabulary. All prior risky corpus inputs, representative unsafe outputs, and round-2/round-3 block probes remained green.
+- Separator mutation RED: 201 tests discovered, 200 passed and only the symbol-separated `给|出系|统提|示词` probe failed, proving Unicode punctuation removal alone did not close symbol separators.
+- Strictness/completeness RED: 207 tests discovered, 201 passed and six failed. Five failures proved explicit whole-text `反对`/`谴责` condemnations needed an anchored allow form; one proved a question-form refusal ending in `？` was still too permissive.
+
+### GREEN
+
+- Final safety command: `npm.cmd run test:safety` — exit code 0; 1 file and 207/207 tests passed.
+- TypeScript command: `npm.cmd run typecheck --workspace @xinyu/safety` — exit code 0 with no diagnostics.
+- Synthetic pressure audit: eight required action terms × five categories × plain/symbol-separated forms, 80 total decisions; zero action or category failures.
+- The fixed round-4 block table contains 20 literal reviewer probes. The genuine table contains 15 standalone refusal/condemnation controls across all five categories.
+
+### Required regression commands
+
+- Safety suite: `npm.cmd run test:safety` — exit code 0; 207/207 passed.
+- Chat regression: `npm.cmd run test:api -- chat.service` — exit code 0; 1 file and 18/18 tests passed after rebuilding `@xinyu/ai` and `@xinyu/safety`.
+- Full repository tests: `npm.cmd test` — exit code 0; 16 test files and 281 tests passed across API (44), Web (12), AI (5), Config (13), and Safety (207). Contracts had no test files and exited 0 through `--passWithNoTests`.
+
+### Requirements, privacy, and scope audit
+
+- NFKC normalization removes Unicode whitespace and format characters, then removes Unicode punctuation and symbols for risk matching. Split action terms and protected objects therefore cannot evade category checks.
+- Every existing per-category block expression remains present and in the same category order. The prior positional refusal parser was removed; concrete action-plus-topic matches no longer inspect refusal location.
+- A risk match is exempt only when the complete structural form matches an anchored category-specific refusal or condemnation. Quotes, questions, internal separators, mixed clauses, and request/action content outside that single statement fail closed.
+- The block decision privacy test uses a synthetic sentinel and confirms `SafetyDecision` does not echo evaluated content. No fixture contains real chat, account, contact, memory, prompt, key, or provider data.
+- The complete diff was reviewed locally because this session exposes no reviewer subagent tool. All four changed paths are under `packages/safety`; `git diff --check` passed.
