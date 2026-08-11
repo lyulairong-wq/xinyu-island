@@ -112,4 +112,4 @@ export function evaluateMessage(content: string): SafetyDecision {
   return allowByDefault();
 }
 
-export * from "./regression-cases";
+export * from "./regression-cases.js";
