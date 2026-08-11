@@ -19,6 +19,7 @@ interface NormalizedSafetyText {
   normalized: string;
   compact: string;
   separatorless: string;
+  englishWordSeparated: string;
 }
 
 interface BlockedRule {
@@ -32,7 +33,8 @@ interface BlockedRule {
 function normalizeSafetyText(content: string): NormalizedSafetyText {
   const normalized = content.normalize("NFKC").replace(/[\p{M}\p{C}]+/gu, "").replace(/[\p{White_Space}]+/gu, " ").trim();
   const compact = normalized.replace(/[\p{White_Space}]+/gu, "");
-  return { normalized, compact, separatorless: compact.replace(/[\p{P}\p{S}]+/gu, "") };
+  const englishWordSeparated = normalized.replace(/[\p{P}\p{S}]+/gu, " ").replace(/[\p{White_Space}]+/gu, " ").trim();
+  return { normalized, compact, separatorless: compact.replace(/[\p{P}\p{S}]+/gu, ""), englishWordSeparated };
 }
 
 function isStandaloneSafetyStatement(rule: BlockedRule, text: string): boolean {
@@ -110,7 +112,7 @@ const englishBlockedRules: ReadonlyArray<EnglishBlockedRule> = [
   },
   {
     category: "cross_user_contact_memory",
-    unsafeRequestPattern: /(?:show|reveal|print|output|provide|give|read|list|export).*(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data)|(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data).*(?:show|reveal|print|output|provide|give|read|list|export)|(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data)(?:\s+history)?\s*[:=]/i
+    unsafeRequestPattern: /(?:show|reveal|print|output|provide|give|read|list|export).*(?:another|other)\s+user(?:'s|s|\s+s)?\s+(?:conversation|chat|memory|data)|(?:another|other)\s+user(?:'s|s|\s+s)?\s+(?:conversation|chat|memory|data).*(?:show|reveal|print|output|provide|give|read|list|export)|(?:another|other)\s+user(?:'s|s|\s+s)?\s+(?:conversation|chat|memory|data)(?:\s+history)?\s*[:=]/i
   },
   {
     category: "prompt_injection_internal_config",
@@ -127,7 +129,7 @@ const englishBlockedRules: ReadonlyArray<EnglishBlockedRule> = [
 ];
 
 export function evaluateMessage(content: string): SafetyDecision {
-  const { normalized, compact, separatorless } = normalizeSafetyText(content);
+  const { normalized, compact, separatorless, englishWordSeparated } = normalizeSafetyText(content);
 
   for (const rule of blockedRules) {
     const hasRiskTopic = rule.topicPattern.test(separatorless);
@@ -141,7 +143,7 @@ export function evaluateMessage(content: string): SafetyDecision {
   }
 
   for (const rule of englishBlockedRules) {
-    if (rule.unsafeRequestPattern.test(normalized)) {
+    if (rule.unsafeRequestPattern.test(normalized) || rule.unsafeRequestPattern.test(englishWordSeparated)) {
       return { action: "block", category: rule.category, policyVersion: SAFETY_POLICY_VERSION };
     }
   }

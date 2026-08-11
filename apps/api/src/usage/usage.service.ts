@@ -33,6 +33,11 @@ export type FreeReservation = {
   estimatedOutputTokens?: number;
 };
 
+export type FreeFinalization<T> = {
+  messageId: string;
+  result: T;
+};
+
 type Account = {
   id: string;
   freeResetAt: Date;
@@ -111,44 +116,8 @@ export class UsageService {
 
   async finalizeFree(reservation: FreeReservation, actual: FreeGenerationActual) {
     try {
-      return await this.runSerializable(async (transaction) => {
-        const current = await transaction.generationRequest.findUnique({ where: { id: reservation.id } });
-        if (!current) throw this.freeError("FREE_GENERATION_IN_PROGRESS");
-
-        const existingRecord = await transaction.tokenUsageRecord.findUnique({ where: { generationRequestId: current.id } });
-        if (existingRecord) return existingRecord;
-        if (current.status !== "reserved") throw this.freeError("FREE_GENERATION_IN_PROGRESS");
-
-        const providerReportedUsage = this.hasProviderUsage(actual);
-        const inputTokens = providerReportedUsage ? actual.inputTokens! : reservation.estimatedInputTokens ?? current.reservedTokens;
-        const outputTokens = providerReportedUsage ? actual.outputTokens! : reservation.estimatedOutputTokens ?? 0;
-        const totalTokens = this.sumTokens(inputTokens, outputTokens);
-        const account = await this.ensureAccount(current.userId, transaction);
-
-        await transaction.tokenAccount.update({
-          where: { id: account.id },
-          data: { freeUsed: Math.max(account.freeUsed - current.reservedTokens + totalTokens, 0) }
-        });
-        const record = await transaction.tokenUsageRecord.create({
-          data: {
-            userId: current.userId,
-            conversationId: current.conversationId,
-            messageId: null,
-            generationRequestId: current.id,
-            mode: current.mode,
-            bucket: "free",
-            inputTokens,
-            outputTokens,
-            totalTokens,
-            source: providerReportedUsage ? "provider" : "estimated"
-          }
-        });
-        await transaction.generationRequest.update({
-          where: { id: current.id },
-          data: { status: "completed", provider: actual.provider ?? current.provider, completedAt: new Date() }
-        });
-        return record;
-      });
+      const finalized = await this.runSerializable((transaction) => this.finalizeFreeInTransaction(transaction, reservation, actual));
+      return finalized.record;
     } catch (error) {
       if (this.isPrismaError(error, "P2002")) {
         const existingRecord = await this.prisma.tokenUsageRecord.findUnique({ where: { generationRequestId: reservation.id } });
@@ -156,6 +125,13 @@ export class UsageService {
       }
       throw error;
     }
+  }
+
+  async finalizeFreeWithMessage<T>(reservation: FreeReservation, actual: FreeGenerationActual, persist: (transaction: Prisma.TransactionClient) => Promise<FreeFinalization<T>>): Promise<T> {
+    return this.runSerializable(async (transaction) => {
+      const finalized = await this.finalizeFreeInTransaction(transaction, reservation, actual, persist);
+      return finalized.result;
+    });
   }
 
   async releaseFree(reservation: FreeReservation) {
@@ -174,6 +150,54 @@ export class UsageService {
 
   async listRecords(userId: string) {
     return this.prisma.tokenUsageRecord.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 50 });
+  }
+
+  private async finalizeFreeInTransaction<T = undefined>(
+    transaction: Prisma.TransactionClient,
+    reservation: FreeReservation,
+    actual: FreeGenerationActual,
+    persist?: (transaction: Prisma.TransactionClient) => Promise<FreeFinalization<T>>
+  ): Promise<{ record: Awaited<ReturnType<Prisma.TransactionClient["tokenUsageRecord"]["create"]>>; result: T }> {
+    const current = await transaction.generationRequest.findUnique({ where: { id: reservation.id } });
+    if (!current) throw this.freeError("FREE_GENERATION_IN_PROGRESS");
+
+    const existingRecord = await transaction.tokenUsageRecord.findUnique({ where: { generationRequestId: current.id } });
+    if (existingRecord) {
+      if (persist) throw this.freeError("FREE_GENERATION_IN_PROGRESS");
+      return { record: existingRecord, result: undefined as T };
+    }
+    if (current.status !== "reserved") throw this.freeError("FREE_GENERATION_IN_PROGRESS");
+
+    const finalized = persist ? await persist(transaction) : undefined;
+    const providerReportedUsage = this.hasProviderUsage(actual);
+    const inputTokens = providerReportedUsage ? actual.inputTokens! : reservation.estimatedInputTokens ?? current.reservedTokens;
+    const outputTokens = providerReportedUsage ? actual.outputTokens! : reservation.estimatedOutputTokens ?? 0;
+    const totalTokens = this.sumTokens(inputTokens, outputTokens);
+    const account = await this.ensureAccount(current.userId, transaction);
+
+    await transaction.tokenAccount.update({
+      where: { id: account.id },
+      data: { freeUsed: Math.max(account.freeUsed - current.reservedTokens + totalTokens, 0) }
+    });
+    const record = await transaction.tokenUsageRecord.create({
+      data: {
+        userId: current.userId,
+        conversationId: current.conversationId,
+        messageId: finalized?.messageId ?? null,
+        generationRequestId: current.id,
+        mode: current.mode,
+        bucket: "free",
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        source: providerReportedUsage ? "provider" : "estimated"
+      }
+    });
+    await transaction.generationRequest.update({
+      where: { id: current.id },
+      data: { status: "completed", provider: actual.provider ?? current.provider, completedAt: new Date() }
+    });
+    return { record, result: finalized?.result as T };
   }
 
   private async runSerializable<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>): Promise<T> {

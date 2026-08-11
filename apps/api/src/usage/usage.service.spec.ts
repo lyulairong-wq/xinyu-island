@@ -41,9 +41,10 @@ type State = {
   account: Account | null;
   requests: Request[];
   records: UsageRecord[];
+  messages: Array<{ id: string; content: string }>;
 };
 
-function createUsagePrisma(account?: Partial<Account>) {
+function createUsagePrisma(account?: Partial<Account>, options: { failUsageRecordCreate?: boolean } = {}) {
   const state: State = {
     account: {
       id: "account-1",
@@ -55,7 +56,8 @@ function createUsagePrisma(account?: Partial<Account>) {
       ...account
     },
     requests: [],
-    records: []
+    records: [],
+    messages: []
   };
   let nextRequestId = 1;
   let nextRecordId = 1;
@@ -111,6 +113,7 @@ function createUsagePrisma(account?: Partial<Account>) {
         current.records.find((record) => record.generationRequestId === where.generationRequestId) ?? null
       ),
       create: vi.fn(async ({ data }: { data: Omit<UsageRecord, "id" | "createdAt"> }) => {
+        if (options.failUsageRecordCreate) throw new Error("usage record write failed");
         if (current.records.some((record) => record.generationRequestId === data.generationRequestId)) {
           throw Object.assign(new Error("Unique constraint"), { code: "P2002" });
         }
@@ -119,6 +122,13 @@ function createUsagePrisma(account?: Partial<Account>) {
         return record;
       }),
       findMany: vi.fn(async () => current.records)
+    },
+    message: {
+      create: vi.fn(async ({ data }: { data: { content: string } }) => {
+        const message = { id: `message-${current.messages.length + 1}`, content: data.content };
+        current.messages.push(message);
+        return message;
+      })
     }
   });
 
@@ -250,6 +260,23 @@ describe("UsageService free generation accounting", () => {
     expect(prisma.state.requests[0]).toMatchObject({ status: "failed", completedAt: null });
     expect(prisma.state.records).toHaveLength(0);
     await expect(service.reserveFree("user-1", "request-2", estimate(500))).resolves.toMatchObject({ status: "reserved" });
+  });
+
+  it("rolls back assistant persistence and the reservation when free finalization cannot create usage", async () => {
+    vi.setSystemTime(new Date("2026-08-09T12:00:00.000Z"));
+    const prisma = createUsagePrisma(undefined, { failUsageRecordCreate: true });
+    const service = new UsageService(prisma as never);
+    const reservation = await service.reserveFree("user-1", "request-1", estimate(500));
+
+    await expect(service.finalizeFreeWithMessage(reservation, { provider: "local", inputTokens: 120, outputTokens: 80 }, async (transaction) => {
+      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "assistant reply", mode: "free" } });
+      return { messageId: message.id, result: message };
+    })).rejects.toThrow("usage record write failed");
+
+    expect(prisma.state.messages).toEqual([]);
+    expect(prisma.state.records).toEqual([]);
+    expect(prisma.state.requests).toMatchObject([{ status: "reserved" }]);
+    expect(prisma.state.account?.freeUsed).toBe(500);
   });
 
   it("reconciles Provider usage exactly and creates one idempotent usage record", async () => {

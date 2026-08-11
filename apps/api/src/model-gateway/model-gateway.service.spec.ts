@@ -100,4 +100,35 @@ describe("ModelGatewayService", () => {
     expect(results).toHaveLength(3);
     expect(results.every((result) => result.provider === "local" && result.degraded)).toBe(true);
   });
+
+  it("lets at most two non-mock generations enter a blocking provider at once", async () => {
+    let active = 0;
+    let peakActive = 0;
+    let entered: (() => void) | undefined;
+    const twoEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release: (() => void) | undefined;
+    const unblock = new Promise<void>((resolve) => { release = resolve; });
+    const blockingProvider: AiProvider = {
+      healthCheck: async () => ({ available: true }),
+      async *generate(): AsyncIterable<GenerationEvent> {
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        if (active === 2) entered?.();
+        await unblock;
+        active -= 1;
+        yield { type: "completed", text: "Local reply", inputTokens: 2, outputTokens: 1 };
+      }
+    };
+    const service = new ModelGatewayService({ local: blockingProvider, mock: provider({ events: [{ type: "completed", text: "Mock reply" }] }) });
+
+    const requests = [service.generate(request), service.generate(request), service.generate(request)];
+    await twoEntered;
+    expect(active).toBe(2);
+    expect(peakActive).toBe(2);
+
+    release?.();
+    const results = await Promise.all(requests);
+    expect(results).toHaveLength(3);
+    expect(peakActive).toBe(2);
+  });
 });
