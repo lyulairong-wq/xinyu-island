@@ -16,6 +16,7 @@ const concreteRiskActionPattern = /(?:给出|根据|说明|泄露|查询|返回|
 const standaloneDisallowedPunctuationPattern = /[\p{Pi}\p{Pf}"'“”‘’,:：;；,，、/\\|…—?？-]/u;
 
 interface NormalizedSafetyText {
+  normalized: string;
   compact: string;
   separatorless: string;
 }
@@ -29,8 +30,9 @@ interface BlockedRule {
 }
 
 function normalizeSafetyText(content: string): NormalizedSafetyText {
-  const compact = content.normalize("NFKC").replace(/[\p{White_Space}\p{Cf}]+/gu, "");
-  return { compact, separatorless: compact.replace(/[\p{P}\p{S}]+/gu, "") };
+  const normalized = content.normalize("NFKC").replace(/[\p{M}\p{C}]+/gu, "").replace(/[\p{White_Space}]+/gu, " ").trim();
+  const compact = normalized.replace(/[\p{White_Space}]+/gu, "");
+  return { normalized, compact, separatorless: compact.replace(/[\p{P}\p{S}]+/gu, "") };
 }
 
 function isStandaloneSafetyStatement(rule: BlockedRule, text: string): boolean {
@@ -96,8 +98,36 @@ const blockedRules: ReadonlyArray<BlockedRule> = [
   }
 ];
 
+interface EnglishBlockedRule {
+  category: string;
+  unsafeRequestPattern: RegExp;
+}
+
+const englishBlockedRules: ReadonlyArray<EnglishBlockedRule> = [
+  {
+    category: "provider_failure_mock",
+    unsafeRequestPattern: /(?:show|reveal|print|output|provide|give).*(?:raw\s+(?:error|response)|internal\s+(?:stack|template)|debug\s+log|provider\s+(?:key|secret))|(?:raw\s+(?:error|response)|internal\s+(?:stack|template)|debug\s+log|provider\s+(?:key|secret)).*(?:show|reveal|print|output|provide|give)|(?:raw\s+error\s+response|raw\s+response|internal\s+(?:stack|template)|debug\s+log|provider\s+(?:key|secret))\s*[:=]/i
+  },
+  {
+    category: "cross_user_contact_memory",
+    unsafeRequestPattern: /(?:show|reveal|print|output|provide|give|read|list|export).*(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data)|(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data).*(?:show|reveal|print|output|provide|give|read|list|export)|(?:another|other)\s+user(?:'s|s)?\s+(?:conversation|chat|memory|data)(?:\s+history)?\s*[:=]/i
+  },
+  {
+    category: "prompt_injection_internal_config",
+    unsafeRequestPattern: /(?:show|reveal|print|output|provide|give|list).*(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret))|(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret)).*(?:show|reveal|print|output|provide|give|list)|(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret))\s*[:=]|ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions/i
+  },
+  {
+    category: "self_harm_violence_illegal_minors",
+    unsafeRequestPattern: /(?:tell|teach|show|give|provide|explain|plan|write).*(?:how\s+to\s+)?(?:hurt\s+myself|self[-\s]?harm|suicide|make\s+(?:a\s+)?weapon|evade\s+(?:the\s+)?police|hack\s+(?:an\s+)?account|exploit\s+(?:a\s+)?minor)|(?:hurt\s+myself|self[-\s]?harm|suicide|make\s+(?:a\s+)?weapon|evade\s+(?:the\s+)?police|hack\s+(?:an\s+)?account|exploit\s+(?:a\s+)?minor).*(?:how|step|method|without\s+being\s+noticed|instruction|advice)|(?:self[-\s]?harm|suicide|weapon)\s+(?:method|instruction|step)s?\s*[:=]/i
+  },
+  {
+    category: "professional_real_world",
+    unsafeRequestPattern: /(?:give|provide|make|tell|recommend|prescribe|diagnose|plan).*(?:medical\s+diagnosis|treatment\s+plan|medication\s+dose|legal\s+advice|lawsuit\s+step|guaranteed\s+(?:return|profit)|investment\s+(?:advice|decision))|(?:medical\s+diagnosis|treatment\s+plan|medication\s+dose|legal\s+advice|lawsuit\s+step|guaranteed\s+(?:return|profit)|investment\s+(?:advice|decision)).*(?:give|provide|make|tell|recommend|prescribe|diagnose|plan)|(?:medical\s+diagnosis|treatment\s+plan|medication\s+dose|legal\s+advice|lawsuit\s+step|guaranteed\s+(?:return|profit)|investment\s+(?:advice|decision))\s*[:=]/i
+  }
+];
+
 export function evaluateMessage(content: string): SafetyDecision {
-  const { compact, separatorless } = normalizeSafetyText(content);
+  const { normalized, compact, separatorless } = normalizeSafetyText(content);
 
   for (const rule of blockedRules) {
     const hasRiskTopic = rule.topicPattern.test(separatorless);
@@ -109,6 +139,13 @@ export function evaluateMessage(content: string): SafetyDecision {
     if (!matchesConcreteRisk || isStandaloneSafetyStatement(rule, compact)) continue;
     return { action: "block", category: rule.category, policyVersion: SAFETY_POLICY_VERSION };
   }
+
+  for (const rule of englishBlockedRules) {
+    if (rule.unsafeRequestPattern.test(normalized)) {
+      return { action: "block", category: rule.category, policyVersion: SAFETY_POLICY_VERSION };
+    }
+  }
+
   return allowByDefault();
 }
 
