@@ -11,6 +11,7 @@ import type { SendMessageDto } from "./dto/send-message.dto";
 
 const LEGACY_TOKEN_OUTPUT_ESTIMATE = 200;
 const HAS_HAN_CHARACTER = /\p{Script=Han}/u;
+const HAS_LATIN_CHARACTER = /\p{Script=Latin}/u;
 
 type MessageConversation = {
   id: string;
@@ -102,8 +103,8 @@ export class ChatService {
     if (content.length > modelConfig.maxInputCharacters) {
       throw new BadRequestException({ code: "GENERATION_INPUT_TOO_LONG", maxInputCharacters: modelConfig.maxInputCharacters });
     }
-    if (!HAS_HAN_CHARACTER.test(content)) {
-      throw new BadRequestException({ code: "GENERATION_CHINESE_REQUIRED" });
+    if (!HAS_HAN_CHARACTER.test(content) || HAS_LATIN_CHARACTER.test(content)) {
+      throw new BadRequestException({ code: "GENERATION_CHINESE_ONLY_REQUIRED" });
     }
 
     const generationInput = quotedMessage ? `Quoted message: ${quotedMessage.content}\n\nUser message: ${content}` : content;
@@ -452,8 +453,8 @@ export class ChatService {
     if (evaluateMessage(text).action !== "allow") {
       throw new BadRequestException({ code: "GENERATION_OUTPUT_REJECTED" });
     }
-    if (!HAS_HAN_CHARACTER.test(text)) {
-      throw new BadRequestException({ code: "GENERATION_OUTPUT_CHINESE_REQUIRED" });
+    if (!HAS_HAN_CHARACTER.test(text) || HAS_LATIN_CHARACTER.test(text)) {
+      throw new BadRequestException({ code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" });
     }
   }
 
