@@ -31,7 +31,7 @@ interface BlockedRule {
 }
 
 function normalizeSafetyText(content: string): NormalizedSafetyText {
-  const normalized = content.normalize("NFKC").replace(/[\p{M}\p{C}]+/gu, "").replace(/[\p{White_Space}]+/gu, " ").trim();
+  const normalized = content.normalize("NFKD").replace(/[\p{M}\p{C}]+/gu, "").normalize("NFKC").replace(/[\p{White_Space}]+/gu, " ").trim();
   const compact = normalized.replace(/[\p{White_Space}]+/gu, "");
   const englishWordSeparated = normalized.replace(/[\p{P}\p{S}]+/gu, " ").replace(/[\p{White_Space}]+/gu, " ").trim();
   return { normalized, compact, separatorless: compact.replace(/[\p{P}\p{S}]+/gu, ""), englishWordSeparated };
@@ -102,18 +102,7 @@ const blockedRules: ReadonlyArray<BlockedRule> = [
 
 interface EnglishBlockedRule {
   category: string;
-  unsafeContentPattern: RegExp;
-}
-
-const englishDisclosureAction = "(?:show|reveal|print|output|provide|give|read|list|export|share|disclose|here\\s+(?:is|are))";
-const englishDangerousAction = "(?:tell|teach|show|give|provide|explain|plan|write|instructions?|steps?|method|how\\s+to|here\\s+(?:is|are))";
-const englishProfessionalAction = "(?:give|provide|make|tell|recommend|prescribe|diagnose|plan|take|file|use|start|stop|buy|sell|invest|here\\s+(?:is|are))";
-
-function englishRiskPattern(topic: string, action: string, unsafeOutput: string): RegExp {
-  return new RegExp(
-    `(?:${action}).*(?:${topic})|(?:${topic}).*(?:${action})|(?:${topic})\\s*(?:(?:is|are|says?)\\s*)?[:=]|(?:${topic})\\s+(?:${unsafeOutput})`,
-    "i"
-  );
+  riskTopicPattern: RegExp;
 }
 
 function isStandaloneEnglishSafetyStatement(text: string): boolean {
@@ -123,39 +112,23 @@ function isStandaloneEnglishSafetyStatement(text: string): boolean {
 const englishBlockedRules: ReadonlyArray<EnglishBlockedRule> = [
   {
     category: "provider_failure_mock",
-    unsafeContentPattern: englishRiskPattern(
-      "(?:raw\\s+(?:provider\\s+)?(?:error(?:\\s+response)?|response)(?:\\s+body)?|internal\\s+(?:stack|template)|debug\\s+log|provider\\s+(?:key|secret))",
-      englishDisclosureAction,
-      "(?:internal|private|secret|stack|template|trace|follows|content)"
-    )
+    riskTopicPattern: /(?:raw\s+(?:provider\s+)?(?:error(?:\s+response)?|response)(?:\s+body)?|internal\s+(?:stack|template)|debug\s+log|provider\s+(?:key|secret))/i
   },
   {
     category: "cross_user_contact_memory",
-    unsafeContentPattern: englishRiskPattern(
-      "(?:(?:another|other|a)\\s+user(?:'s|\\s+s|s)?\\s+(?:conversation|chat|memory|data)(?:\\s+history)?|(?:another|other|a)\\s+user(?:'s|\\s+s|s)?\\s+private\\s+(?:chat|message|history))",
-      englishDisclosureAction,
-      "(?:private|secret|message|content|text|history)"
-    )
+    riskTopicPattern: /(?:(?:another|other|a|unauthorized)\s+user(?:'s|\s+s|s)?\s+(?:conversation|chat|memory|data)(?:\s+history)?|(?:another|other|a)\s+user(?:'s|\s+s|s)?\s+private\s+(?:chat|message|history)|private\s+(?:chat|message|history)\s+from\s+another\s+account)/i
   },
   {
     category: "prompt_injection_internal_config",
-    unsafeContentPattern: /(?:show|reveal|print|output|provide|give|list|share|disclose|here\s+(?:is|are)).*(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret))|(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret)).*(?:show|reveal|print|output|provide|give|list|share|disclose|here\s+(?:is|are))|(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret))\s*(?:(?:is|are|says?)\s*)?[:=]|(?:system\s+prompt|developer\s+message|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret))\s+(?:hidden|private|secret|instruction|config|content|use)|ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions/i
+    riskTopicPattern: /(?:system\s+prompt|developer\s+(?:message|instruction)|internal\s+(?:rule|config)|environment\s+variable|api\s*(?:key|secret)|ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions)/i
   },
   {
     category: "self_harm_violence_illegal_minors",
-    unsafeContentPattern: englishRiskPattern(
-      "(?:hurt\\s+myself|self\\s*harm|suicide|make\\s+(?:a\\s+)?weapon|evade\\s+(?:the\\s+)?police|hack\\s+(?:an\\s+)?account|exploit\\s+(?:a\\s+)?minor)",
-      englishDangerousAction,
-      "(?:use|cut|destroy|step|details|materials|method|instructions?)"
-    )
+    riskTopicPattern: /(?:hurt\s+myself|self\s*harm|suicid(?:e|al)|kill\s+myself|weapon|explosive|(?:violent|violence|attack|assault|murder)|evade\s+(?:the\s+)?police|destroy\s+evidence|hack(?:ing)?\s+(?:an\s+)?account|exploit\s+(?:a\s+)?minor)/i
   },
   {
     category: "professional_real_world",
-    unsafeContentPattern: englishRiskPattern(
-      "(?:medical\\s+diagnosis|treatment\\s+plan|medication\\s+dose|prescription\\s+dose|legal\\s+advice|lawsuit\\s+step|guaranteed\\s+(?:return|profit)|investment\\s+(?:advice|decision))",
-      englishProfessionalAction,
-      "(?:take|file|use|start|stop|buy|sell|dose|treatment)"
-    )
+    riskTopicPattern: /(?:medical(?:\s+(?:advice|diagnosis|treatment))?|diagnos(?:is|e)|treatment(?:\s+plan)?|medication\s+dose|prescription\s+dose|legal(?:\s+(?:action|advice))?|lawsuit|guaranteed\s+(?:return|profit|income)|investment(?:\s+(?:advice|decision|return))?)/i
   }
 ];
 
@@ -176,7 +149,7 @@ export function evaluateMessage(content: string): SafetyDecision {
   if (isStandaloneEnglishSafetyStatement(normalized)) return allowByDefault();
 
   for (const rule of englishBlockedRules) {
-    if (rule.unsafeContentPattern.test(normalized) || rule.unsafeContentPattern.test(englishWordSeparated)) {
+    if (rule.riskTopicPattern.test(normalized) || rule.riskTopicPattern.test(englishWordSeparated)) {
       return { action: "block", category: rule.category, policyVersion: SAFETY_POLICY_VERSION };
     }
   }
