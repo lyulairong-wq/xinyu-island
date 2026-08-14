@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -36,6 +36,12 @@ export type FreeReservation = {
 export type FreeFinalization<T> = {
   messageId: string;
   result: T;
+};
+
+export type SimulatedTokenFinalization<T> = FreeFinalization<T> & {
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
 };
 
 type Account = {
@@ -81,31 +87,57 @@ export class UsageService {
 
   async settleSimulatedTokenWithMessages<T>(
     userId: string,
-    input: { conversationId: string; inputTokens: number; outputTokens: number },
-    persist: (transaction: Prisma.TransactionClient) => Promise<{ messageId: string; result: T }>
+    input: { conversationId: string; requestId: string },
+    persist: (transaction: Prisma.TransactionClient) => Promise<SimulatedTokenFinalization<T>>
   ): Promise<T> {
-    const totalTokens = this.sumTokens(input.inputTokens, input.outputTokens);
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const duplicate = await transaction.generationRequest.findUnique({
+          where: { userId_requestId: { userId, requestId: input.requestId } }
+        });
+        if (duplicate) throw this.duplicateGenerationError(duplicate, input.conversationId);
 
-    return this.runSerializable(async (transaction) => {
-      const account = await this.assertSimulatedTokenBalanceInTransaction(userId, totalTokens, transaction);
+        const request = await transaction.generationRequest.create({
+          data: {
+            userId,
+            conversationId: input.conversationId,
+            requestId: input.requestId,
+            mode: "token",
+            status: "running",
+            reservedTokens: 0
+          }
+        });
+        const finalized = await persist(transaction);
+        const totalTokens = this.sumTokens(finalized.inputTokens, finalized.outputTokens);
+        const account = await this.assertSimulatedTokenBalanceInTransaction(userId, totalTokens, transaction);
 
-      const finalized = await persist(transaction);
-      await transaction.tokenAccount.update({ where: { id: account.id }, data: { paidBalance: { decrement: totalTokens } } });
-      await transaction.tokenUsageRecord.create({
-        data: {
-          userId,
-          conversationId: input.conversationId,
-          messageId: finalized.messageId,
-          mode: "token",
-          bucket: "paid",
-          inputTokens: input.inputTokens,
-          outputTokens: input.outputTokens,
-          totalTokens,
-          source: "simulated"
-        }
-      });
-      return finalized.result;
-    });
+        await transaction.tokenAccount.update({ where: { id: account.id }, data: { paidBalance: { decrement: totalTokens } } });
+        await transaction.tokenUsageRecord.create({
+          data: {
+            userId,
+            conversationId: input.conversationId,
+            messageId: finalized.messageId,
+            generationRequestId: request.id,
+            mode: "token",
+            bucket: "paid",
+            inputTokens: finalized.inputTokens,
+            outputTokens: finalized.outputTokens,
+            totalTokens,
+            source: "simulated"
+          }
+        });
+        await transaction.generationRequest.update({
+          where: { id: request.id },
+          data: { status: "completed", provider: finalized.provider, completedAt: new Date() }
+        });
+        return finalized.result;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (this.isPrismaError(error, "P2002") || this.isPrismaError(error, "P2034")) {
+        throw new ConflictException({ code: "GENERATION_IN_PROGRESS" });
+      }
+      throw error;
+    }
   }
 
   async reserveFree(userId: string, requestId: string, estimate: FreeGenerationEstimate): Promise<FreeReservation> {
@@ -298,6 +330,18 @@ export class UsageService {
 
   private isPrismaError(error: unknown, code: string) {
     return typeof error === "object" && error !== null && "code" in error && error.code === code;
+  }
+
+  private duplicateGenerationError(
+    request: { conversationId: string; mode: string; status: string },
+    conversationId: string
+  ) {
+    if (request.conversationId !== conversationId || request.mode !== "token") {
+      return new ConflictException({ code: "GENERATION_IDEMPOTENCY_CONFLICT" });
+    }
+    return new ConflictException({
+      code: request.status === "completed" ? "GENERATION_ALREADY_COMPLETED" : "GENERATION_IN_PROGRESS"
+    });
   }
 
   private freeError(code: "FREE_QUOTA_EXCEEDED" | "FREE_COOLDOWN_ACTIVE" | "FREE_GENERATION_IN_PROGRESS") {

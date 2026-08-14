@@ -40,25 +40,26 @@ export class ChatGenerationCoordinator {
     const generationContent = quote
       ? `引用消息：${quote.content}\n\n用户消息：${content}`
       : content;
+
+    if (input.mode === "token") {
+      return this.settleToken(input, generationContent, content, quote?.id);
+    }
+
     const estimatedInputTokens = estimateTokens(generationContent) * input.contacts.length;
     let reservation: FreeReservation | undefined;
 
-    if (input.mode === "free") {
-      reservation = await this.usage.reserveFree(input.userId, input.requestId, {
-        conversationId: input.conversationId,
-        inputTokens: estimatedInputTokens,
-        outputTokens: input.maxOutputTokens * input.contacts.length
-      });
-    }
+    reservation = await this.usage.reserveFree(input.userId, input.requestId, {
+      conversationId: input.conversationId,
+      inputTokens: estimatedInputTokens,
+      outputTokens: input.maxOutputTokens * input.contacts.length
+    });
 
     try {
-      const userMessage = await this.persistUserMessage(input, content, quote?.id);
+      const userMessage = await this.persistUserMessage(this.prisma, input, content, quote?.id);
       const replies = await this.collectReplies(input, generationContent);
       const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
       const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
-      const assistantMessages = input.mode === "free"
-        ? await this.settleFree(reservation!, input, replies, inputTokens, outputTokens)
-        : await this.settleToken(input, replies, inputTokens, outputTokens);
+      const assistantMessages = await this.settleFree(reservation, input, replies, inputTokens, outputTokens);
 
       reservation = undefined;
       return this.response(input, userMessage, assistantMessages, replies, inputTokens, outputTokens);
@@ -144,17 +145,30 @@ export class ChatGenerationCoordinator {
     }, (transaction) => this.persistAssistantMessages(transaction, input, replies));
   }
 
-  private async settleToken(
+  private settleToken(
     input: ChatGenerationInput,
-    replies: GeneratedReply[],
-    inputTokens: number,
-    outputTokens: number
+    generationContent: string,
+    content: string,
+    quotedMessageId?: string
   ) {
     return this.usage.settleSimulatedTokenWithMessages(input.userId, {
       conversationId: input.conversationId,
-      inputTokens,
-      outputTokens
-    }, (transaction) => this.persistAssistantMessages(transaction, input, replies));
+      requestId: input.requestId
+    }, async (transaction) => {
+      const replies = await this.collectReplies(input, generationContent);
+      const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
+      const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
+      const userMessage = await this.persistUserMessage(transaction, input, content, quotedMessageId);
+      const assistantMessages = (await this.persistAssistantMessages(transaction, input, replies)).result;
+
+      return {
+        messageId: assistantMessages[0]!.id,
+        provider: "mock",
+        inputTokens,
+        outputTokens,
+        result: this.response(input, userMessage, assistantMessages, replies, inputTokens, outputTokens)
+      };
+    });
   }
 
   private async persistAssistantMessages(transaction: Prisma.TransactionClient, input: ChatGenerationInput, replies: GeneratedReply[]) {
@@ -167,8 +181,13 @@ export class ChatGenerationCoordinator {
     return { messageId: messages[0]!.id, result: messages };
   }
 
-  private persistUserMessage(input: ChatGenerationInput, content: string, quotedMessageId?: string) {
-    return this.prisma.message.create({
+  private persistUserMessage(
+    client: PrismaService | Prisma.TransactionClient,
+    input: ChatGenerationInput,
+    content: string,
+    quotedMessageId?: string
+  ) {
+    return client.message.create({
       data: {
         conversationId: input.conversationId,
         role: "user",

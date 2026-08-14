@@ -99,7 +99,11 @@ export class ChatService {
       ? [...conversation.members].sort((a, b) => a.sortOrder - b.sortOrder).map((member) => member.contactId)
       : [conversation.contactId];
     const contacts = await Promise.all(contactIds.map((contactId) => this.contacts.resolve(userId, contactId)));
-    const memoryContext = await this.memoryContext(userId, conversation);
+    const memoryContexts = await Promise.all(contactIds.map((contactId) => this.memoryContext(
+      userId,
+      conversation.memoryEnabled,
+      contactId
+    )));
     const modelConfig = loadConfig(process.env).freeModel;
 
     return this.generationCoordinator.generate({
@@ -110,19 +114,19 @@ export class ChatService {
       mode: input.mode,
       content: input.content,
       ...(quotedMessage ? { quote: quotedMessage } : {}),
-      contacts: contacts.map((contact) => ({
+      contacts: contacts.map((contact, index) => ({
         name: contact.name,
-        systemPrompt: this.systemPrompt(contact, memoryContext)
+        systemPrompt: this.systemPrompt(contact, memoryContexts[index]!)
       })),
       maxInputCharacters: modelConfig.maxInputCharacters,
       maxOutputTokens: modelConfig.maxOutputTokens
     });
   }
 
-  private async memoryContext(userId: string, conversation: Pick<MessageConversation, "memoryEnabled" | "contactId">): Promise<string[]> {
-    const memories = conversation.memoryEnabled
+  private async memoryContext(userId: string, memoryEnabled: boolean, contactId: string): Promise<string[]> {
+    const memories = memoryEnabled
       ? await this.prisma.contactMemory.findMany({
-          where: { userId, contactId: conversation.contactId, sensitivity: "normal" },
+          where: { userId, contactId, sensitivity: "normal" },
           orderBy: { updatedAt: "desc" },
           take: 20
         })

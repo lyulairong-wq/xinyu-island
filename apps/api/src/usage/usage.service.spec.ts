@@ -319,22 +319,100 @@ describe("UsageService free generation accounting", () => {
 });
 
 describe("UsageService simulated token settlement", () => {
+  it("generates and debits only once when a completed Token request is retried", async () => {
+    const prisma = createUsagePrisma({ paidBalance: 50 });
+    const service = new UsageService(prisma as never);
+    let generationCalls = 0;
+    const settle = () => service.settleSimulatedTokenWithMessages("user-1", {
+      conversationId: "conversation-1",
+      requestId: "request-1"
+    }, async (transaction) => {
+      generationCalls += 1;
+      const userMessage = await transaction.message.create({
+        data: { conversationId: "conversation-1", role: "user", content: "你好", mode: "token" }
+      });
+      const assistantMessage = await transaction.message.create({
+        data: { conversationId: "conversation-1", role: "assistant", content: "你好呀", mode: "token" }
+      });
+      return {
+        messageId: assistantMessage.id,
+        provider: "mock",
+        inputTokens: 20,
+        outputTokens: 10,
+        result: { userMessage, assistantMessage }
+      };
+    });
+
+    await expect(settle()).resolves.toMatchObject({ assistantMessage: { content: "你好呀" } });
+    await expect(settle()).rejects.toMatchObject({
+      response: { code: "GENERATION_ALREADY_COMPLETED" },
+      status: 409
+    });
+
+    expect(generationCalls).toBe(1);
+    expect(prisma.state.account?.paidBalance).toBe(20);
+    expect(prisma.state.messages).toHaveLength(2);
+    expect(prisma.state.requests).toMatchObject([{
+      userId: "user-1",
+      conversationId: "conversation-1",
+      requestId: "request-1",
+      mode: "token",
+      status: "completed",
+      provider: "mock",
+      reservedTokens: 0,
+      completedAt: expect.any(Date)
+    }]);
+    expect(prisma.state.records).toMatchObject([{
+      generationRequestId: prisma.state.requests[0]!.id,
+      totalTokens: 30,
+      source: "simulated"
+    }]);
+  });
+
   it("rolls back persisted reply, paid balance, and usage when persistence throws", async () => {
     const prisma = createUsagePrisma({ paidBalance: 50 });
     const service = new UsageService(prisma as never);
 
     await expect(service.settleSimulatedTokenWithMessages("user-1", {
       conversationId: "conversation-1",
-      inputTokens: 20,
-      outputTokens: 10
+      requestId: "request-1"
     }, async (transaction) => {
-      await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
+      await transaction.message.create({ data: { conversationId: "conversation-1", role: "user", content: "你好", mode: "token" } });
+      await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "你好呀", mode: "token" } });
       throw new Error("message persistence failed");
     })).rejects.toThrow("message persistence failed");
 
     expect(prisma.state.messages).toEqual([]);
     expect(prisma.state.account?.paidBalance).toBe(50);
     expect(prisma.state.records).toEqual([]);
+    expect(prisma.state.requests).toEqual([]);
+  });
+
+  it("rolls back the Token request, both messages, balance, and usage when usage persistence fails", async () => {
+    const prisma = createUsagePrisma({ paidBalance: 50 }, { failUsageRecordCreate: true });
+    const service = new UsageService(prisma as never);
+
+    await expect(service.settleSimulatedTokenWithMessages("user-1", {
+      conversationId: "conversation-1",
+      requestId: "request-1"
+    }, async (transaction) => {
+      const userMessage = await transaction.message.create({
+        data: { conversationId: "conversation-1", role: "user", content: "你好", mode: "token" }
+      });
+      const assistantMessage = await transaction.message.create({
+        data: { conversationId: "conversation-1", role: "assistant", content: "你好呀", mode: "token" }
+      });
+      return {
+        messageId: assistantMessage.id,
+        provider: "mock",
+        inputTokens: 20,
+        outputTokens: 10,
+        result: { userMessage, assistantMessage }
+      };
+    })).rejects.toThrow("usage record write failed");
+
+    expect(prisma.state).toMatchObject({ requests: [], messages: [], records: [] });
+    expect(prisma.state.account?.paidBalance).toBe(50);
   });
 
   it("persists a simulated token reply, deducts its balance, and records paid usage", async () => {
@@ -343,19 +421,20 @@ describe("UsageService simulated token settlement", () => {
 
     const result = await service.settleSimulatedTokenWithMessages("user-1", {
       conversationId: "conversation-1",
-      inputTokens: 20,
-      outputTokens: 10
+      requestId: "request-1"
     }, async (transaction) => {
-      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
-      return { messageId: message.id, result: message };
+      await transaction.message.create({ data: { conversationId: "conversation-1", role: "user", content: "你好", mode: "token" } });
+      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "你好呀", mode: "token" } });
+      return { messageId: message.id, provider: "mock", inputTokens: 20, outputTokens: 10, result: message };
     });
 
-    expect(result).toEqual({ id: "message-1", content: "reply" });
+    expect(result).toEqual({ id: "message-2", content: "你好呀" });
     expect(prisma.state.account?.paidBalance).toBe(20);
     expect(prisma.state.records).toMatchObject([{
       userId: "user-1",
       conversationId: "conversation-1",
-      messageId: "message-1",
+      messageId: "message-2",
+      generationRequestId: prisma.state.requests[0]!.id,
       mode: "token",
       bucket: "paid",
       inputTokens: 20,
@@ -371,15 +450,16 @@ describe("UsageService simulated token settlement", () => {
 
     await expect(service.settleSimulatedTokenWithMessages("user-1", {
       conversationId: "conversation-1",
-      inputTokens: 20,
-      outputTokens: 10
+      requestId: "request-1"
     }, async (transaction) => {
-      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
-      return { messageId: message.id, result: message };
+      await transaction.message.create({ data: { conversationId: "conversation-1", role: "user", content: "你好", mode: "token" } });
+      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "你好呀", mode: "token" } });
+      return { messageId: message.id, provider: "mock", inputTokens: 20, outputTokens: 10, result: message };
     })).rejects.toMatchObject({ response: { code: "TOKEN_QUOTA_REQUIRED" } });
 
     expect(prisma.state.messages).toEqual([]);
     expect(prisma.state.account?.paidBalance).toBe(29);
     expect(prisma.state.records).toEqual([]);
+    expect(prisma.state.requests).toEqual([]);
   });
 });

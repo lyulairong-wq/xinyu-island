@@ -82,4 +82,19 @@ describe("MockAiProvider", () => {
     expect(events[1]).toMatchObject({ type: "delta", provider: "mock" });
     expect(events[2]).toMatchObject({ type: "completed", provider: "mock" });
   });
+
+  it("uses a strict-Chinese default greeting", async () => {
+    const events = [];
+    for await (const event of new MockAiProvider().generate({
+      conversationId: "conversation-1",
+      content: "你好",
+      mode: "free",
+      maxOutputTokens: 512
+    })) events.push(event);
+
+    const completed = events.find((event) => event.type === "completed");
+    expect(completed).toMatchObject({ provider: "mock" });
+    expect(completed?.text).toContain("你好");
+    expect(completed?.text).not.toMatch(/\p{Script=Latin}/u);
+  });
 });

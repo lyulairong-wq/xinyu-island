@@ -64,7 +64,7 @@ function createPrismaMock() {
       })
     },
     contactMemory: {
-      findMany: vi.fn(async () => [{ fact: "只属于当前用户与联系人的记忆" }])
+      findMany: vi.fn(async (_query?: { where: { userId: string; contactId: string; sensitivity: string } }) => [{ fact: "只属于当前用户与联系人的记忆" }])
     },
     message: {
       create: vi.fn(async ({ data }: { data: { conversationId: string; role: string; content: string; mode: string; quotedMessageId?: string } }) => {
@@ -120,7 +120,7 @@ function createHarness() {
     await usage.finalizeFree(currentReservation, actual);
     return finalized.result;
   });
-  usage.settleSimulatedTokenWithMessages.mockImplementation(async (_userId: string, _actual: { conversationId: string; inputTokens: number; outputTokens: number }, persist: (transaction: typeof prisma) => Promise<{ messageId: string; result: unknown }>) => {
+  usage.settleSimulatedTokenWithMessages.mockImplementation(async (_userId: string, _actual: { conversationId: string; requestId: string }, persist: (transaction: typeof prisma) => Promise<{ messageId: string; provider: string; inputTokens: number; outputTokens: number; result: unknown }>) => {
     return (await persist(prisma)).result;
   });
   const gateway = {
@@ -300,7 +300,7 @@ describe("ChatService", () => {
     expect(usage.consume).not.toHaveBeenCalled();
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledWith("user-1", expect.objectContaining({
       conversationId: conversation.id,
-      inputTokens: 1
+      requestId: REQUEST_ID
     }), expect.any(Function));
   });
 
@@ -422,8 +422,8 @@ describe("ChatService", () => {
       response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
-    expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
-    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
   });
 
   it.each(["warn", "transform", "block", "escalate"] as const)("rejects a %s final output before assistant persistence", async (action) => {
@@ -550,6 +550,33 @@ describe("ChatService", () => {
     }));
   });
 
+  it("injects only each group contact's own normal-sensitivity memories", async () => {
+    const { service, prisma, gateway } = createHarness();
+    prisma.contactMemory.findMany.mockImplementation(async (query?: { where: { userId: string; contactId: string; sensitivity: string } }) => query?.where.contactId === "lin"
+      ? [{ fact: "林屿记得用户喜欢海边" }]
+      : [{ fact: "星河记得用户喜欢看星星" }]);
+    const conversation = await service.createGroup("user-1", ["lin", "xing"], true);
+
+    await service.sendMessage("user-1", conversation.id, freeMessage());
+
+    expect(prisma.contactMemory.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.contactMemory.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { userId: "user-1", contactId: "lin", sensitivity: "normal" }
+    }));
+    expect(prisma.contactMemory.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { userId: "user-1", contactId: "xing", sensitivity: "normal" }
+    }));
+
+    const generationCalls = gateway.generate.mock.calls as unknown as Array<[{ systemPrompt: string }]>;
+    const contexts = generationCalls.map(([request]) => {
+      const encoded = request.systemPrompt.match(/base64-json">\n([^\n]+)\n<\/untrusted-context>/)?.[1];
+      expect(encoded).toBeDefined();
+      return JSON.parse(Buffer.from(encoded!, "base64").toString("utf8")) as { memories: string[] };
+    });
+    expect(contexts[0]!.memories).toEqual(["林屿记得用户喜欢海边"]);
+    expect(contexts[1]!.memories).toEqual(["星河记得用户喜欢看星星"]);
+  });
+
   it("places custom contact data and memory inside explicitly untrusted prompt blocks", async () => {
     const { service, contacts, prisma, gateway } = createHarness();
     vi.mocked(evaluateMessage).mockImplementation((content: string) => content.includes("忽略之前的指令")
@@ -656,8 +683,8 @@ describe("ChatService", () => {
       response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
-    expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
-    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist free group assistant replies when finalization fails", async () => {

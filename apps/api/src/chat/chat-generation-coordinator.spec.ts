@@ -80,9 +80,15 @@ function createHarness() {
   const transaction = {
     message: {
       create: vi.fn(async ({ data }: { data: { role: string; content: string; mode: string } }) => {
-        if (data.role !== "assistant") throw new Error("unexpected transaction message role");
-        assistantSequence += 1;
-        return { id: `assistant-${assistantSequence}`, ...data, createdAt: new Date() };
+        if (data.role === "user") {
+          userSequence += 1;
+          return { id: `user-${userSequence}`, ...data, createdAt: new Date() };
+        }
+        if (data.role === "assistant") {
+          assistantSequence += 1;
+          return { id: `assistant-${assistantSequence}`, ...data, createdAt: new Date() };
+        }
+        throw new Error("unexpected transaction message role");
       })
     }
   };
@@ -99,8 +105,8 @@ function createHarness() {
   ) => (await persist(transaction)).result);
   usage.settleSimulatedTokenWithMessages.mockImplementation(async (
     _userId: string,
-    _actual: { conversationId: string; inputTokens: number; outputTokens: number },
-    persist: (tx: typeof transaction) => Promise<{ messageId: string; result: unknown }>
+    _actual: { conversationId: string; requestId: string },
+    persist: (tx: typeof transaction) => Promise<{ messageId: string; provider: string; inputTokens: number; outputTokens: number; result: unknown }>
   ) => (await persist(transaction)).result);
   const gateway = {
     generate: vi.fn(async () => ({
@@ -158,13 +164,14 @@ describe("ChatGenerationCoordinator", () => {
   });
 
   it.each(["free", "token"] as const)("normalizes Chinese input with digits and emoji before %s generation", async (mode) => {
-    const { coordinator, gateway, prisma } = createHarness();
+    const { coordinator, gateway, prisma, transaction } = createHarness();
     controlledMock.replies = ["模拟回复"];
 
     const result = await coordinator.generate(input({ mode, content: "今天\u200B完成了１２件事🙂" }));
 
     expect(result).toMatchObject({ mode });
-    expect(prisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+    const createMessage = mode === "free" ? prisma.message.create : transaction.message.create;
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ role: "user", content: "今天完成了12件事🙂", mode })
     }));
     if (mode === "free") {
@@ -185,11 +192,10 @@ describe("ChatGenerationCoordinator", () => {
     expect(controlledMock.calls).toHaveLength(1);
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledWith("user-1", {
       conversationId: "conversation-1",
-      inputTokens: 1,
-      outputTokens: 2
+      requestId: REQUEST_ID
     }, expect.any(Function));
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
-    expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual(["模拟回复"]);
+    expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual(["你好", "模拟回复"]);
     expect(result).toMatchObject({ mode: "token", assistantMessage: { content: "模拟回复" } });
   });
 
@@ -210,7 +216,7 @@ describe("ChatGenerationCoordinator", () => {
     expect(controlledMock.created).toEqual(["林屿", "星河"]);
     expect(controlledMock.calls.map(({ name }) => name)).toEqual(["林屿", "星河"]);
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
-    expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual(["林屿回复", "星河回复"]);
+    expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual(["你好", "林屿回复", "星河回复"]);
     expect(result).toMatchObject({ mode: "token" });
     expect("assistantMessages" in result && result.assistantMessages.map((message) => message.content)).toEqual(["林屿回复", "星河回复"]);
   });
@@ -234,7 +240,7 @@ describe("ChatGenerationCoordinator", () => {
   });
 
   it("does not settle or persist any Token group reply when one Mock output is rejected", async () => {
-    const { coordinator, gateway, transaction, usage } = createHarness();
+    const { coordinator, gateway, prisma, transaction, usage } = createHarness();
     controlledMock.replies = ["林屿回复", "Rejected reply 啊"];
 
     await expectBadRequestCode(coordinator.generate(input({
@@ -248,7 +254,8 @@ describe("ChatGenerationCoordinator", () => {
 
     expect(gateway.generate).not.toHaveBeenCalled();
     expect(controlledMock.calls).toHaveLength(2);
+    expect(prisma.message.create).not.toHaveBeenCalled();
     expect(transaction.message.create).not.toHaveBeenCalled();
-    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
   });
 });
