@@ -8,7 +8,8 @@ import { GenerationPolicy } from "./generation-policy";
 const controlledMock = vi.hoisted(() => ({
   calls: [] as Array<{ name: string; request: GenerationRequest }>,
   created: [] as string[],
-  replies: [] as string[]
+  replies: [] as string[],
+  useRealProvider: false
 }));
 
 vi.mock("@xinyu/ai", async (importOriginal) => {
@@ -21,6 +22,11 @@ vi.mock("@xinyu/ai", async (importOriginal) => {
 
     async *generate(request: GenerationRequest) {
       controlledMock.calls.push({ name: this.name, request });
+      if (controlledMock.useRealProvider) {
+        const provider = new actual.MockAiProvider(this.name);
+        for await (const event of provider.generate(request)) yield event;
+        return;
+      }
       const text = controlledMock.replies.shift() ?? `${this.name}回复`;
       yield { type: "started" as const, provider: "mock" };
       yield { type: "delta" as const, text, provider: "mock" };
@@ -140,6 +146,7 @@ describe("ChatGenerationCoordinator", () => {
     controlledMock.calls = [];
     controlledMock.created = [];
     controlledMock.replies = [];
+    controlledMock.useRealProvider = false;
   });
 
   it.each([
@@ -197,6 +204,23 @@ describe("ChatGenerationCoordinator", () => {
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
     expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual(["你好", "模拟回复"]);
     expect(result).toMatchObject({ mode: "token", assistantMessage: { content: "模拟回复" } });
+  });
+
+  it("completes a Chinese Token greeting when the private contact is named Alice", async () => {
+    const { coordinator, gateway, transaction } = createHarness();
+    controlledMock.useRealProvider = true;
+
+    const result = await coordinator.generate(input({
+      mode: "token",
+      contacts: [{ name: "Alice", systemPrompt: "陪伴提示" }]
+    }));
+
+    expect(gateway.generate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ mode: "token" });
+    expect(transaction.message.create.mock.calls.map(([call]) => call.data.content)).toEqual([
+      "你好",
+      expect.not.stringMatching(/\p{Script=Latin}/u)
+    ]);
   });
 
   it("collects Token group replies in member order before one simulated settlement", async () => {

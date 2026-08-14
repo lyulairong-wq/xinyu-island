@@ -23,7 +23,9 @@ export interface AiProvider {
 }
 
 export class MockAiProvider implements AiProvider {
-  constructor(private readonly name = "心屿助手") {}
+  private readonly name = "心屿助手";
+
+  constructor(_contactName?: string) {}
 
   async *generate(request: GenerationRequest): AsyncIterable<GenerationEvent> {
     yield { type: "started", provider: "mock" };
