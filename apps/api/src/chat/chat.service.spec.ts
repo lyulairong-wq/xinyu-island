@@ -75,7 +75,7 @@ function createPrismaMock() {
           createdAt: new Date()
         };
       }),
-      findFirst: vi.fn(async () => ({ id: "quoted-1", content: "original message" })),
+      findFirst: vi.fn(async () => ({ id: "quoted-1", content: "原始消息" })),
       delete: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id }))
     }
   };
@@ -111,6 +111,7 @@ function createHarness() {
     finalizeFree: vi.fn(async () => ({ id: "usage-1" })),
     finalizeFreeWithMessage: vi.fn(),
     releaseFree: vi.fn(async () => undefined),
+    settleSimulatedTokenWithMessages: vi.fn(),
     assertAvailable: vi.fn(async () => undefined),
     consume: vi.fn(async () => undefined)
   };
@@ -118,6 +119,9 @@ function createHarness() {
     const finalized = await persist(prisma);
     await usage.finalizeFree(currentReservation, actual);
     return finalized.result;
+  });
+  usage.settleSimulatedTokenWithMessages.mockImplementation(async (_userId: string, _actual: { conversationId: string; inputTokens: number; outputTokens: number }, persist: (transaction: typeof prisma) => Promise<{ messageId: string; result: unknown }>) => {
+    return (await persist(prisma)).result;
   });
   const gateway = {
     generate: vi.fn(async () => ({
@@ -238,20 +242,21 @@ describe("ChatService", () => {
 
     await service.sendMessage("user-1", conversation.id, freeMessage({ content: "今天第 123 次见面啦！😊" }));
 
-    expect(gateway.generate).toHaveBeenCalledWith(expect.objectContaining({ content: "今天第 123 次见面啦！😊" }));
+    expect(gateway.generate).toHaveBeenCalledWith(expect.objectContaining({ content: "今天第 123 次见面啦!😊" }));
   });
 
-  it("continues to block a Chinese high-risk message through the safety decision", async () => {
+  it("rejects a Chinese high-risk message before persistence, quota, or generation", async () => {
     const { service, usage, gateway, prisma } = createHarness();
     const conversation = await service.createConversation("user-1", "lin");
     vi.mocked(evaluateMessage).mockImplementation((content: string) => content.includes("高风险")
       ? { action: "block", category: "test-input", policyVersion: "test" }
       : { action: "allow", policyVersion: "test" });
 
-    const result = await service.sendMessage("user-1", conversation.id, freeMessage({ content: "这是高风险中文请求" }));
+    await expect(service.sendMessage("user-1", conversation.id, freeMessage({ content: "这是高风险中文请求" }))).rejects.toMatchObject({
+      response: { code: "GENERATION_CHINESE_ONLY_REQUIRED" }
+    });
 
-    expect(result).toMatchObject({ blocked: true, category: "test-input", chargedTokens: 0 });
-    expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user", "assistant"]);
+    expect(prisma.message.create).not.toHaveBeenCalled();
     expect(usage.reserveFree).not.toHaveBeenCalled();
     expect(gateway.generate).not.toHaveBeenCalled();
   });
@@ -283,7 +288,7 @@ describe("ChatService", () => {
     expect(result).toMatchObject({ chargedTokens: 0, provider: "primary", degraded: false });
   });
 
-  it("preserves legacy token mock generation and 200-token preauthorization", async () => {
+  it("uses Mock-only token simulation and settles through the atomic API", async () => {
     const { service, usage, gateway } = createHarness();
     const conversation = await service.createConversation("user-1", "lin");
     vi.stubEnv("FREE_MAX_OUTPUT_TOKENS", "999");
@@ -291,12 +296,12 @@ describe("ChatService", () => {
     await service.sendMessage("user-1", conversation.id, tokenMessage());
 
     expect(gateway.generate).not.toHaveBeenCalled();
-    expect(usage.assertAvailable).toHaveBeenCalledWith("user-1", "token", 201);
-    expect(usage.consume).toHaveBeenCalledWith("user-1", expect.objectContaining({
-      mode: "token",
+    expect(usage.assertAvailable).not.toHaveBeenCalled();
+    expect(usage.consume).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledWith("user-1", expect.objectContaining({
       conversationId: conversation.id,
       inputTokens: 1
-    }));
+    }), expect.any(Function));
   });
 
   it("does not invoke the gateway when a repeated request id is rejected", async () => {
@@ -390,7 +395,7 @@ describe("ChatService", () => {
     gateway.generate.mockResolvedValueOnce({ text, provider: "local", degraded: false, inputTokens: 2, outputTokens: 4 });
 
     await expect(service.sendMessage("user-1", conversation.id, freeMessage())).rejects.toMatchObject({
-      response: { code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" }
+      response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
     expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
@@ -405,7 +410,7 @@ describe("ChatService", () => {
 
     await service.sendMessage("user-1", conversation.id, freeMessage());
 
-    expect(prisma.message.create.mock.calls.map(([call]) => call.data.content)).toContain("这是第 123 次中文说明！😊");
+    expect(prisma.message.create.mock.calls.map(([call]) => call.data.content)).toContain("这是第 123 次中文说明!😊");
   });
 
   it("never persists a Latin-script token assistant output", async () => {
@@ -414,11 +419,11 @@ describe("ChatService", () => {
     legacyMockReply.text = "I want to harm myself tonight. 啊";
 
     await expect(service.sendMessage("user-1", conversation.id, tokenMessage())).rejects.toMatchObject({
-      response: { code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" }
+      response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
     expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
-    expect(usage.consume).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
   });
 
   it.each(["warn", "transform", "block", "escalate"] as const)("rejects a %s final output before assistant persistence", async (action) => {
@@ -438,14 +443,18 @@ describe("ChatService", () => {
     expect(usage.finalizeFree).not.toHaveBeenCalled();
   });
 
-  it("gates unsafe input before quota and provider invocation", async () => {
-    const { service, usage, gateway } = createHarness();
+  it("gates unsafe input before persistence, quota, and provider invocation", async () => {
+    const { service, usage, gateway, prisma } = createHarness();
     const conversation = await service.createConversation("user-1", "lin");
-    vi.mocked(evaluateMessage).mockReturnValueOnce({ action: "block", category: "test-input", policyVersion: "test" });
+    vi.mocked(evaluateMessage).mockImplementation((content: string) => content.includes("高风险中文输入")
+      ? { action: "block", category: "test-input", policyVersion: "test" }
+      : { action: "allow", policyVersion: "test" });
 
-    const result = await service.sendMessage("user-1", conversation.id, freeMessage({ content: "高风险中文输入" }));
+    await expect(service.sendMessage("user-1", conversation.id, freeMessage({ content: "高风险中文输入" }))).rejects.toMatchObject({
+      response: { code: "GENERATION_CHINESE_ONLY_REQUIRED" }
+    });
 
-    expect(result).toMatchObject({ blocked: true, category: "test-input", chargedTokens: 0 });
+    expect(prisma.message.create).not.toHaveBeenCalled();
     expect(usage.reserveFree).not.toHaveBeenCalled();
     expect(gateway.generate).not.toHaveBeenCalled();
   });
@@ -481,8 +490,38 @@ describe("ChatService", () => {
       data: expect.objectContaining({ role: "user", content: "继续说说这个问题", quotedMessageId: "quoted-1" })
     }));
     expect(gateway.generate).toHaveBeenCalledWith(expect.objectContaining({
-      content: "Quoted message: original message\n\nUser message: 继续说说这个问题"
+      content: "引用消息：原始消息\n\n用户消息：继续说说这个问题"
     }));
+  });
+
+  it("keeps valid quoted Token generation inside the Chinese-only output boundary", async () => {
+    const { service, usage } = createHarness();
+    const conversation = await service.createConversation("user-1", "lin");
+
+    const result = await service.sendMessage("user-1", conversation.id, tokenMessage({
+      content: "继续说说这个问题",
+      quoteMessageId: "quoted-1"
+    }));
+
+    expect(result).toMatchObject({ mode: "token" });
+    expect("assistantMessage" in result && result.assistantMessage.content).not.toMatch(/\p{Script=Latin}/u);
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["free", "token"] as const)("rejects an unsafe quote before %s writes, quota, or generation", async (mode) => {
+    const { service, prisma, usage, gateway } = createHarness();
+    const conversation = await service.createConversation("user-1", "lin");
+    prisma.message.findFirst.mockResolvedValueOnce({ id: "quoted-1", content: "𝖧arm myself tonight. 好" });
+
+    await expect(service.sendMessage("user-1", conversation.id, {
+      ...(mode === "free" ? freeMessage() : tokenMessage()),
+      quoteMessageId: "quoted-1"
+    })).rejects.toMatchObject({ response: { code: "GENERATION_QUOTE_REJECTED" } });
+
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(usage.reserveFree).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
+    expect(gateway.generate).not.toHaveBeenCalled();
   });
 
   it("does not load or inject memories when conversation memory is disabled", async () => {
@@ -586,7 +625,7 @@ describe("ChatService", () => {
       .mockResolvedValueOnce({ text: "I want to harm myself tonight. 啊", provider: "local", degraded: false, inputTokens: 2, outputTokens: 3 });
 
     await expect(service.sendMessage("user-1", conversation.id, freeMessage())).rejects.toMatchObject({
-      response: { code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" }
+      response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
     expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
@@ -600,7 +639,7 @@ describe("ChatService", () => {
     gateway.generate.mockResolvedValueOnce({ text: "Fallback response 啊", provider: "mock", degraded: true, inputTokens: 2, outputTokens: 4 });
 
     await expect(service.sendMessage("user-1", conversation.id, freeMessage())).rejects.toMatchObject({
-      response: { code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" }
+      response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
     expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
@@ -614,11 +653,11 @@ describe("ChatService", () => {
     legacyMockReply.text = "Token group reply 啊";
 
     await expect(service.sendMessage("user-1", conversation.id, tokenMessage())).rejects.toMatchObject({
-      response: { code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" }
+      response: { code: "GENERATION_OUTPUT_REJECTED" }
     });
 
     expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
-    expect(usage.consume).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).not.toHaveBeenCalled();
   });
 
   it("does not persist free group assistant replies when finalization fails", async () => {

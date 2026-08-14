@@ -1,17 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { MockAiProvider } from "@xinyu/ai";
 import { loadConfig } from "@xinyu/config";
 import { evaluateMessage } from "@xinyu/safety";
-import { PrismaService } from "../prisma/prisma.service";
 import { ContactsService } from "../contacts/contacts.service";
-import { ModelGatewayService, type ModelGatewayResult } from "../model-gateway/model-gateway.service";
-import { estimateTokens } from "../model-gateway/model-limits";
-import { UsageService, type FreeReservation } from "../usage/usage.service";
+import { ModelGatewayService } from "../model-gateway/model-gateway.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { UsageService } from "../usage/usage.service";
+import { ChatGenerationCoordinator } from "./chat-generation-coordinator";
 import type { SendMessageDto } from "./dto/send-message.dto";
-
-const LEGACY_TOKEN_OUTPUT_ESTIMATE = 200;
-const HAS_HAN_CHARACTER = /\p{Script=Han}/u;
-const HAS_LATIN_CHARACTER = /\p{Script=Latin}/u;
 
 type MessageConversation = {
   id: string;
@@ -29,12 +24,16 @@ type ContactPromptProfile = {
 
 @Injectable()
 export class ChatService {
+  private readonly generationCoordinator: ChatGenerationCoordinator;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly contacts: ContactsService,
     private readonly usage: UsageService,
     private readonly gateway: ModelGatewayService
-  ) {}
+  ) {
+    this.generationCoordinator = new ChatGenerationCoordinator(prisma, usage, gateway);
+  }
 
   async createConversation(userId: string, contactId: string, memoryEnabled?: boolean) {
     const contact = await this.contacts.resolve(userId, contactId);
@@ -90,324 +89,33 @@ export class ChatService {
   }
 
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
-    const conversation = await this.getOwnedConversation(userId, conversationId);
-    const contact = await this.contacts.resolve(userId, conversation.contactId);
+    const conversation = await this.getOwnedConversation(userId, conversationId) as MessageConversation;
     const quotedMessage = input.quoteMessageId
       ? await this.prisma.message.findFirst({ where: { id: input.quoteMessageId, conversationId }, select: { id: true, content: true } })
       : null;
     if (input.quoteMessageId && !quotedMessage) throw new NotFoundException("Quoted message was not found in this conversation");
 
-    const content = input.content.trim();
+    const contactIds = conversation.kind === "group"
+      ? [...conversation.members].sort((a, b) => a.sortOrder - b.sortOrder).map((member) => member.contactId)
+      : [conversation.contactId];
+    const contacts = await Promise.all(contactIds.map((contactId) => this.contacts.resolve(userId, contactId)));
+    const memoryContext = await this.memoryContext(userId, conversation);
     const modelConfig = loadConfig(process.env).freeModel;
-    if (!content) throw new BadRequestException({ code: "GENERATION_INPUT_INVALID" });
-    if (content.length > modelConfig.maxInputCharacters) {
-      throw new BadRequestException({ code: "GENERATION_INPUT_TOO_LONG", maxInputCharacters: modelConfig.maxInputCharacters });
-    }
-    if (!HAS_HAN_CHARACTER.test(content) || HAS_LATIN_CHARACTER.test(content)) {
-      throw new BadRequestException({ code: "GENERATION_CHINESE_ONLY_REQUIRED" });
-    }
 
-    const generationInput = quotedMessage ? `Quoted message: ${quotedMessage.content}\n\nUser message: ${content}` : content;
-    const inputSafety = evaluateMessage(generationInput);
-    if (inputSafety.action === "block") {
-      const userMessage = await this.persistUserMessage(conversationId, input, content, quotedMessage?.id);
-      const assistantMessage = await this.prisma.message.create({
-        data: {
-          conversationId,
-          role: "assistant",
-          content: "这类内容我不能提供具体指导。心屿仅用于娱乐和陪伴；如果你正面临现实中的紧急风险，请联系当地紧急服务或可信任的人。",
-          mode: input.mode
-        }
-      });
-      return {
-        userMessage,
-        assistantMessage,
-        mode: input.mode,
-        chargedTokens: 0,
-        blocked: true,
-        category: inputSafety.category,
-        notice: "该问题涉及高风险内容，已停止提供具体建议。"
-      };
-    }
-
-    if (input.mode === "token") {
-      if (conversation.kind === "group") {
-        return this.sendLegacyTokenGroupMessage(userId, conversation as MessageConversation, input, content, generationInput, quotedMessage?.id);
-      }
-      return this.sendLegacyTokenSingleMessage(userId, conversation as MessageConversation, contact, input, content, generationInput, quotedMessage?.id);
-    }
-
-    if (conversation.kind === "group") {
-      return this.sendGroupMessage(userId, conversation as MessageConversation, input, content, generationInput, quotedMessage?.id, modelConfig.maxOutputTokens);
-    }
-
-    return this.sendSingleMessage(userId, conversation as MessageConversation, contact, input, content, generationInput, quotedMessage?.id, modelConfig.maxOutputTokens);
-  }
-
-  private async sendLegacyTokenSingleMessage(
-    userId: string,
-    conversation: MessageConversation,
-    contact: ContactPromptProfile,
-    input: SendMessageDto,
-    content: string,
-    generationInput: string,
-    quotedMessageId: string | undefined
-  ) {
-    const estimatedInputTokens = estimateTokens(generationInput);
-    const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
-    await this.usage.assertAvailable(userId, "token", estimatedInputTokens + LEGACY_TOKEN_OUTPUT_ESTIMATE);
-    const memoryContext = await this.memoryContext(userId, conversation);
-    const text = await this.generateLegacyTokenReply(conversation.id, generationInput, contact, memoryContext);
-    this.assertSafeOutput(text);
-    const assistantMessage = await this.prisma.message.create({
-      data: { conversationId: conversation.id, role: "assistant", content: text, mode: "token" }
-    });
-    const outputTokens = estimateTokens(text);
-    await this.usage.consume(userId, {
-      mode: "token",
+    return this.generationCoordinator.generate({
+      userId,
       conversationId: conversation.id,
-      messageId: assistantMessage.id,
-      inputTokens: estimatedInputTokens,
-      outputTokens
-    });
-    return {
-      userMessage,
-      assistantMessage,
-      mode: "token" as const,
-      chargedTokens: estimatedInputTokens + outputTokens,
-      notice: "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。",
-      estimatedResourceTokens: estimatedInputTokens + outputTokens
-    };
-  }
-
-  private async sendLegacyTokenGroupMessage(
-    userId: string,
-    conversation: MessageConversation,
-    input: SendMessageDto,
-    content: string,
-    generationInput: string,
-    quotedMessageId: string | undefined
-  ) {
-    const members = [...conversation.members].sort((a, b) => a.sortOrder - b.sortOrder);
-    const inputTokens = estimateTokens(generationInput);
-    const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
-    await this.usage.assertAvailable(userId, "token", inputTokens + LEGACY_TOKEN_OUTPUT_ESTIMATE * members.length);
-    const memoryContext = await this.memoryContext(userId, conversation);
-    const assistantMessages = [];
-    let outputTokens = 0;
-
-    for (const member of members) {
-      const contact = await this.contacts.resolve(userId, member.contactId);
-      const text = await this.generateLegacyTokenReply(conversation.id, generationInput, contact, memoryContext);
-      this.assertSafeOutput(text);
-      outputTokens += estimateTokens(text);
-      assistantMessages.push(await this.prisma.message.create({
-        data: { conversationId: conversation.id, role: "assistant", content: text, mode: "token" }
-      }));
-    }
-
-    await this.usage.consume(userId, {
-      mode: "token",
-      conversationId: conversation.id,
-      messageId: assistantMessages[0]!.id,
-      inputTokens,
-      outputTokens
-    });
-    return {
-      userMessage,
-      assistantMessages,
-      mode: "token" as const,
-      chargedTokens: inputTokens + outputTokens,
-      notice: "讨论组已按成员顺序回复，仅供娱乐参考。"
-    };
-  }
-
-  private async generateLegacyTokenReply(conversationId: string, content: string, contact: ContactPromptProfile, memoryContext: string[]) {
-    const provider = new MockAiProvider(contact.name);
-    let text = "";
-    let failed = false;
-    for await (const event of provider.generate({
-      conversationId,
-      content,
-      mode: "token",
-      maxOutputTokens: LEGACY_TOKEN_OUTPUT_ESTIMATE,
-      systemPrompt: this.systemPrompt(contact, memoryContext)
-    })) {
-      if (event.type === "delta" && event.text) text += event.text;
-      if (event.type === "failed") failed = true;
-    }
-    if (!text || failed) {
-      text = "";
-      for await (const event of new MockAiProvider(contact.name).generate({
-        conversationId,
-        content,
-        mode: "token",
-        maxOutputTokens: LEGACY_TOKEN_OUTPUT_ESTIMATE
-      })) {
-        if (event.type === "delta" && event.text) text += event.text;
-      }
-    }
-    return text;
-  }
-
-  private async sendSingleMessage(
-    userId: string,
-    conversation: MessageConversation,
-    contact: ContactPromptProfile,
-    input: SendMessageDto,
-    content: string,
-    generationInput: string,
-    quotedMessageId: string | undefined,
-    maxOutputTokens: number
-  ) {
-    const estimatedInputTokens = estimateTokens(generationInput);
-    let reservation: FreeReservation | undefined;
-
-    if (input.mode === "free") {
-      reservation = await this.usage.reserveFree(userId, input.requestId, {
-        conversationId: conversation.id,
-        inputTokens: estimatedInputTokens,
-        outputTokens: maxOutputTokens
-      });
-    } else {
-      await this.usage.assertAvailable(userId, input.mode, estimatedInputTokens + maxOutputTokens);
-    }
-
-    try {
-      const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
-      const memoryContext = await this.memoryContext(userId, conversation);
-      const generated = await this.gateway.generate({
-        conversationId: conversation.id,
-        content: generationInput,
-        mode: input.mode,
-        maxOutputTokens,
+      requestId: input.requestId,
+      kind: conversation.kind === "group" ? "group" : "single",
+      mode: input.mode,
+      content: input.content,
+      ...(quotedMessage ? { quote: quotedMessage } : {}),
+      contacts: contacts.map((contact) => ({
+        name: contact.name,
         systemPrompt: this.systemPrompt(contact, memoryContext)
-      });
-      this.assertSafeOutput(generated.text);
-
-      const assistantMessage = await this.usage.finalizeFreeWithMessage(reservation!, {
-        provider: generated.provider,
-        inputTokens: generated.inputTokens,
-        outputTokens: generated.outputTokens
-      }, async (transaction) => {
-        const message = await transaction.message.create({
-          data: { conversationId: conversation.id, role: "assistant", content: generated.text, mode: input.mode }
-        });
-        return { messageId: message.id, result: message };
-      });
-      reservation = undefined;
-
-      const notice = input.mode === "free"
-        ? generated.provider === "mock"
-          ? "当前使用免费 Mock 回复，仅供娱乐参考。"
-          : "当前使用免费开源模型回复，仅供娱乐参考。"
-        : "Token 模式接口已预留，当前未产生 Token 消耗，仅供娱乐参考。";
-      return {
-        userMessage,
-        assistantMessage,
-        mode: input.mode,
-        provider: generated.provider,
-        degraded: generated.degraded,
-        chargedTokens: input.mode === "token" ? generated.inputTokens + generated.outputTokens : 0,
-        notice,
-        estimatedResourceTokens: generated.inputTokens + generated.outputTokens
-      };
-    } catch (error) {
-      if (reservation) await this.usage.releaseFree(reservation);
-      throw error;
-    }
-  }
-
-  private async sendGroupMessage(
-    userId: string,
-    conversation: MessageConversation,
-    input: SendMessageDto,
-    content: string,
-    generationInput: string,
-    quotedMessageId: string | undefined,
-    maxOutputTokens: number
-  ) {
-    const members = [...conversation.members].sort((a, b) => a.sortOrder - b.sortOrder);
-    const estimatedInputTokens = estimateTokens(generationInput) * members.length;
-    let reservation: FreeReservation | undefined;
-
-    if (input.mode === "free") {
-      reservation = await this.usage.reserveFree(userId, input.requestId, {
-        conversationId: conversation.id,
-        inputTokens: estimatedInputTokens,
-        outputTokens: maxOutputTokens * members.length
-      });
-    } else {
-      await this.usage.assertAvailable(userId, input.mode, estimatedInputTokens + maxOutputTokens * members.length);
-    }
-
-    try {
-      const userMessage = await this.persistUserMessage(conversation.id, input, content, quotedMessageId);
-      const memoryContext = await this.memoryContext(userId, conversation);
-      const generatedReplies: ModelGatewayResult[] = [];
-
-      for (const member of members) {
-        const contact = await this.contacts.resolve(userId, member.contactId);
-        const generated = await this.gateway.generate({
-          conversationId: conversation.id,
-          content: generationInput,
-          mode: input.mode,
-          maxOutputTokens,
-          systemPrompt: this.systemPrompt(contact, memoryContext)
-        });
-        this.assertSafeOutput(generated.text);
-        generatedReplies.push(generated);
-      }
-
-      const inputTokens = generatedReplies.reduce((sum, generated) => sum + generated.inputTokens, 0);
-      const outputTokens = generatedReplies.reduce((sum, generated) => sum + generated.outputTokens, 0);
-      const providers = [...new Set(generatedReplies.map((generated) => generated.provider))];
-      const aggregate: ModelGatewayResult = {
-        text: generatedReplies.map((generated) => generated.text).join("\n"),
-        provider: providers[0] ?? "mock",
-        degraded: generatedReplies.some((generated) => generated.degraded),
-        inputTokens,
-        outputTokens
-      };
-      const assistantMessages = await this.usage.finalizeFreeWithMessage(reservation!, {
-        provider: providers.join(","),
-        inputTokens,
-        outputTokens
-      }, async (transaction) => {
-        const messages = [];
-        for (const generated of generatedReplies) {
-          messages.push(await transaction.message.create({
-            data: { conversationId: conversation.id, role: "assistant", content: generated.text, mode: input.mode }
-          }));
-        }
-        return { messageId: messages[0]!.id, result: messages };
-      });
-      reservation = undefined;
-
-      return {
-        userMessage,
-        assistantMessages,
-        mode: input.mode,
-        providers,
-        degraded: aggregate.degraded,
-        chargedTokens: input.mode === "token" ? inputTokens + outputTokens : 0,
-        notice: "讨论组已按成员顺序回复，仅供娱乐参考。"
-      };
-    } catch (error) {
-      if (reservation) await this.usage.releaseFree(reservation);
-      throw error;
-    }
-  }
-
-  private async persistUserMessage(conversationId: string, input: SendMessageDto, content: string, quotedMessageId?: string) {
-    return this.prisma.message.create({
-      data: {
-        conversationId,
-        role: "user",
-        content,
-        mode: input.mode,
-        ...(quotedMessageId ? { quotedMessageId } : {})
-      }
+      })),
+      maxInputCharacters: modelConfig.maxInputCharacters,
+      maxOutputTokens: modelConfig.maxOutputTokens
     });
   }
 
@@ -447,15 +155,6 @@ export class ChatService {
   private normalizePromptData(value: string, maxCharacters: number) {
     const normalized = value.normalize("NFKC").replace(/[\p{C}]/gu, "").slice(0, maxCharacters);
     return evaluateMessage(normalized).action === "allow" ? normalized : "[已省略高风险用户数据]";
-  }
-
-  private assertSafeOutput(text: string) {
-    if (evaluateMessage(text).action !== "allow") {
-      throw new BadRequestException({ code: "GENERATION_OUTPUT_REJECTED" });
-    }
-    if (!HAS_HAN_CHARACTER.test(text) || HAS_LATIN_CHARACTER.test(text)) {
-      throw new BadRequestException({ code: "GENERATION_OUTPUT_CHINESE_ONLY_REQUIRED" });
-    }
   }
 
   async deleteMessage(userId: string, conversationId: string, messageId: string) {
