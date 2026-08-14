@@ -79,6 +79,35 @@ export class UsageService {
     return this.prisma.tokenUsageRecord.create({ data: { userId, conversationId: input.conversationId, messageId: input.messageId, mode: input.mode, bucket: input.mode === "free" ? "free" : "paid", inputTokens: input.inputTokens, outputTokens: input.outputTokens, totalTokens, source: "estimated" } });
   }
 
+  async settleSimulatedTokenWithMessages<T>(
+    userId: string,
+    input: { conversationId: string; inputTokens: number; outputTokens: number },
+    persist: (transaction: Prisma.TransactionClient) => Promise<{ messageId: string; result: T }>
+  ): Promise<T> {
+    const totalTokens = this.sumTokens(input.inputTokens, input.outputTokens);
+
+    return this.runSerializable(async (transaction) => {
+      const account = await this.assertSimulatedTokenBalanceInTransaction(userId, totalTokens, transaction);
+
+      const finalized = await persist(transaction);
+      await transaction.tokenAccount.update({ where: { id: account.id }, data: { paidBalance: { decrement: totalTokens } } });
+      await transaction.tokenUsageRecord.create({
+        data: {
+          userId,
+          conversationId: input.conversationId,
+          messageId: finalized.messageId,
+          mode: "token",
+          bucket: "paid",
+          inputTokens: input.inputTokens,
+          outputTokens: input.outputTokens,
+          totalTokens,
+          source: "simulated"
+        }
+      });
+      return finalized.result;
+    });
+  }
+
   async reserveFree(userId: string, requestId: string, estimate: FreeGenerationEstimate): Promise<FreeReservation> {
     const reservedTokens = this.sumTokens(estimate.inputTokens, estimate.outputTokens);
     const now = new Date();
@@ -253,6 +282,14 @@ export class UsageService {
       throw new BadRequestException({ code: "GENERATION_USAGE_INVALID" });
     }
     return inputTokens + outputTokens;
+  }
+
+  private async assertSimulatedTokenBalanceInTransaction(userId: string, totalTokens: number, transaction: Prisma.TransactionClient): Promise<Account> {
+    const account = await this.resetIfNeeded(await this.ensureAccount(userId, transaction), transaction);
+    if (account.paidBalance < totalTokens) {
+      throw new BadRequestException({ code: "TOKEN_QUOTA_REQUIRED" });
+    }
+    return account;
   }
 
   private isTokenCount(value: number | undefined): value is number {

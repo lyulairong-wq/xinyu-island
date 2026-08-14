@@ -148,6 +148,7 @@ function createUsagePrisma(account?: Partial<Account>, options: { failUsageRecor
       state.account = draft.account;
       state.requests = draft.requests;
       state.records = draft.records;
+      state.messages = draft.messages;
       return result;
     } finally {
       release();
@@ -314,5 +315,71 @@ describe("UsageService free generation accounting", () => {
 
     expect(record).toMatchObject({ inputTokens: 500, outputTokens: 0, totalTokens: 500, source: "estimated" });
     expect(prisma.state.account?.freeUsed).toBe(500);
+  });
+});
+
+describe("UsageService simulated token settlement", () => {
+  it("rolls back persisted reply, paid balance, and usage when persistence throws", async () => {
+    const prisma = createUsagePrisma({ paidBalance: 50 });
+    const service = new UsageService(prisma as never);
+
+    await expect(service.settleSimulatedTokenWithMessages("user-1", {
+      conversationId: "conversation-1",
+      inputTokens: 20,
+      outputTokens: 10
+    }, async (transaction) => {
+      await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
+      throw new Error("message persistence failed");
+    })).rejects.toThrow("message persistence failed");
+
+    expect(prisma.state.messages).toEqual([]);
+    expect(prisma.state.account?.paidBalance).toBe(50);
+    expect(prisma.state.records).toEqual([]);
+  });
+
+  it("persists a simulated token reply, deducts its balance, and records paid usage", async () => {
+    const prisma = createUsagePrisma({ paidBalance: 50 });
+    const service = new UsageService(prisma as never);
+
+    const result = await service.settleSimulatedTokenWithMessages("user-1", {
+      conversationId: "conversation-1",
+      inputTokens: 20,
+      outputTokens: 10
+    }, async (transaction) => {
+      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
+      return { messageId: message.id, result: message };
+    });
+
+    expect(result).toEqual({ id: "message-1", content: "reply" });
+    expect(prisma.state.account?.paidBalance).toBe(20);
+    expect(prisma.state.records).toMatchObject([{
+      userId: "user-1",
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      mode: "token",
+      bucket: "paid",
+      inputTokens: 20,
+      outputTokens: 10,
+      totalTokens: 30,
+      source: "simulated"
+    }]);
+  });
+
+  it("rejects an insufficient simulated token balance without persisting a reply or usage", async () => {
+    const prisma = createUsagePrisma({ paidBalance: 29 });
+    const service = new UsageService(prisma as never);
+
+    await expect(service.settleSimulatedTokenWithMessages("user-1", {
+      conversationId: "conversation-1",
+      inputTokens: 20,
+      outputTokens: 10
+    }, async (transaction) => {
+      const message = await transaction.message.create({ data: { conversationId: "conversation-1", role: "assistant", content: "reply", mode: "token" } });
+      return { messageId: message.id, result: message };
+    })).rejects.toMatchObject({ response: { code: "TOKEN_QUOTA_REQUIRED" } });
+
+    expect(prisma.state.messages).toEqual([]);
+    expect(prisma.state.account?.paidBalance).toBe(29);
+    expect(prisma.state.records).toEqual([]);
   });
 });
