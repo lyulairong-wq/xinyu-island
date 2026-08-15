@@ -4,7 +4,7 @@ export type AiMode = "free" | "token";
 
 export type ConversationKind = "direct" | "group";
 
-export * from "./skills";
+export * from "./skills.js";
 
 export interface HealthResponse {
   service: "xinyu-api";

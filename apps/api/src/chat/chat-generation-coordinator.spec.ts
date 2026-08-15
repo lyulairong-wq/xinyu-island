@@ -263,6 +263,27 @@ describe("ChatGenerationCoordinator", () => {
     expect(usage.releaseFree).toHaveBeenCalledWith(reservation);
   });
 
+  it("persists skill card metadata only after a safe output passes policy", async () => {
+    const { coordinator, transaction } = createHarness();
+    const skillCard = {
+      skill: "tarot",
+      title: "塔罗",
+      summary: "围绕主题做趣味解读。",
+      disclaimer: "趣味解读，仅供娱乐参考",
+      actions: ["deepen", "change_topic", "return_to_chat"]
+    };
+
+    const result = await coordinator.generate(input({
+      purpose: "skill",
+      assistantMetadata: { skillCard }
+    }));
+
+    expect(transaction.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ role: "assistant", metadata: { skillCard } })
+    });
+    expect(result).toMatchObject({ assistantMessage: { metadata: { skillCard } } });
+  });
+
   it("does not settle or persist any Token group reply when one Mock output is rejected", async () => {
     const { coordinator, gateway, prisma, transaction, usage } = createHarness();
     controlledMock.replies = ["林屿回复", "Rejected reply 啊"];

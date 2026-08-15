@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { MockAiProvider, type GenerationRequest } from "@xinyu/ai";
 import type { Prisma } from "@prisma/client";
 import { ModelGatewayService, type ModelGatewayResult } from "../model-gateway/model-gateway.service";
@@ -18,10 +18,13 @@ export type ChatGenerationInput = {
   contacts: Array<{ name: string; systemPrompt: string }>;
   maxInputCharacters: number;
   maxOutputTokens: number;
+  purpose?: "chat" | "skill";
+  assistantMetadata?: Prisma.InputJsonObject;
 };
 
 type GeneratedReply = ModelGatewayResult;
 
+@Injectable()
 export class ChatGenerationCoordinator {
   constructor(
     private readonly prisma: PrismaService,
@@ -31,7 +34,7 @@ export class ChatGenerationCoordinator {
   ) {}
 
   async generate(input: ChatGenerationInput) {
-    const content = this.normalizedUserContent(input.content, input.maxInputCharacters);
+    const content = this.normalizedUserContent(input.content, input.maxInputCharacters, input.purpose ?? "chat");
     const quote = input.quote
       ? { ...input.quote, content: this.policy.assertQuoteContent(input.quote.content.trim()).trim() }
       : undefined;
@@ -69,11 +72,13 @@ export class ChatGenerationCoordinator {
     }
   }
 
-  private normalizedUserContent(content: string, maxInputCharacters: number) {
+  private normalizedUserContent(content: string, maxInputCharacters: number, purpose: "chat" | "skill") {
     const trimmed = content.trim();
     if (!trimmed) throw new BadRequestException({ code: "GENERATION_INPUT_INVALID" });
 
-    const normalized = this.policy.assertUserContent(trimmed).trim();
+    const normalized = (purpose === "skill"
+      ? this.policy.assertSkillContent(trimmed)
+      : this.policy.assertUserContent(trimmed)).trim();
     if (!normalized) throw new BadRequestException({ code: "GENERATION_INPUT_INVALID" });
     if (normalized.length > maxInputCharacters) {
       throw new BadRequestException({ code: "GENERATION_INPUT_TOO_LONG", maxInputCharacters });
@@ -175,7 +180,13 @@ export class ChatGenerationCoordinator {
     const messages = [];
     for (const reply of replies) {
       messages.push(await transaction.message.create({
-        data: { conversationId: input.conversationId, role: "assistant", content: reply.text, mode: input.mode }
+        data: {
+          conversationId: input.conversationId,
+          role: "assistant",
+          content: reply.text,
+          mode: input.mode,
+          ...(input.assistantMetadata ? { metadata: input.assistantMetadata } : {})
+        }
       }));
     }
     return { messageId: messages[0]!.id, result: messages };
