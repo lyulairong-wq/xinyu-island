@@ -1,9 +1,12 @@
-import { IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 
 export class SendMessageDto {
   @IsString()
-  @Length(1, 4000)
+  @MinLength(1)
   content!: string;
+
+  @IsUUID()
+  requestId!: string;
 
   @IsIn(["free", "token"])
   mode!: "free" | "token";

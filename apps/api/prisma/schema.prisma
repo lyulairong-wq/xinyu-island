@@ -25,6 +25,7 @@ model User {
   defaultMemoryEnabled Boolean @default(false)
   tokenAccount TokenAccount?
   usageRecords TokenUsageRecord[]
+  generationRequests GenerationRequest[]
 }
 
 model UserSession {
@@ -106,7 +107,7 @@ model ContactMemory {
 model TokenAccount {
   id          String   @id @default(cuid())
   userId      String   @unique
-  freeLimit   Int      @default(10000)
+  freeLimit   Int      @default(6000)
   freeUsed    Int      @default(0)
   freeResetAt DateTime
   paidBalance Int      @default(0)
@@ -114,11 +115,29 @@ model TokenAccount {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model GenerationRequest {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String
+  requestId      String
+  mode           String
+  status         String
+  provider       String?
+  reservedTokens Int
+  completedAt    DateTime?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageRecord    TokenUsageRecord?
+
+  @@unique([userId, requestId])
+  @@index([userId, status, completedAt])
+}
+
 model TokenUsageRecord {
   id             String   @id @default(cuid())
   userId         String
   conversationId String?
   messageId      String?
+  generationRequestId String? @unique
   mode           String
   bucket         String
   inputTokens    Int      @default(0)
@@ -127,6 +146,7 @@ model TokenUsageRecord {
   source         String   @default("estimated")
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generationRequest GenerationRequest? @relation(fields: [generationRequestId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([conversationId, createdAt])
