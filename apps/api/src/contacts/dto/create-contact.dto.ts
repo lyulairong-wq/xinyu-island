@@ -1,6 +1,7 @@
 import { IsOptional, IsString, Length } from "class-validator";
+import { UpdateContactSkillsDto } from "./update-contact-skills.dto";
 
-export class CreateContactDto {
+export class CreateContactDto extends UpdateContactSkillsDto {
   @IsString()
   @Length(1, 40)
   name!: string;
