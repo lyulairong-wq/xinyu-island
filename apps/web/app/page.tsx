@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { AppsHome } from "../components/apps/apps-home";
 import { AuthGate } from "../components/auth/auth-gate";
+import { ChatShell } from "../components/chat/chat-shell";
 import {
   buildConsentPayload,
   ConsentChecklist,
@@ -10,6 +11,7 @@ import {
   isConsentSelectionComplete,
   type ConsentSelection
 } from "../components/auth/consent-checklist";
+import { ContactsHome } from "../components/contacts/contacts-home";
 import { MeHome } from "../components/me/me-home";
 import { AppNavigation, type AppDestination } from "../components/navigation/app-navigation";
 import { operationalNotice } from "../lib/api-client";
@@ -17,16 +19,12 @@ import { login, logout, register, type AuthUser } from "../lib/auth-api";
 import { getBrowserTokenStorage } from "../lib/auth-session";
 import {
   createConversation,
-  createGroup,
-  getConversation,
   listConversations,
-  sendMessage,
-  updateConversation,
   type ConversationSummary,
-  type GenerationMode,
-  type Message
+  type CreateGroupResult,
+  type GenerationMode
 } from "../lib/chat-api";
-import { deleteContact, listContacts, type Contact } from "../lib/contacts-api";
+import { listContacts, type Contact } from "../lib/contacts-api";
 
 export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -165,11 +163,7 @@ function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () =>
   const [activeNav, setActiveNav] = useState<AppDestination>("chat");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [history, setHistory] = useState<ConversationSummary[]>([]);
-  const [selected, setSelected] = useState<Contact | null>(null);
-  const [conversationId, setConversationId] = useState("");
-  const [memoryEnabled, setMemoryEnabled] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [content, setContent] = useState("");
+  const [requestedConversationId, setRequestedConversationId] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("free");
   const [notice, setNotice] = useState("");
 
@@ -206,250 +200,73 @@ function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () =>
   };
 
   const openContact = async (contact: Contact) => {
-    setSelected(contact);
-    setMessages([]);
     setNotice("");
-    try {
-      const conversation = await createConversation(contact.id);
-      setConversationId(conversation.id);
-      setMemoryEnabled(conversation.memoryEnabled);
-      await refreshHistory();
-    } catch (error) {
-      setNotice(operationalNotice(error, "暂时无法创建对话"));
-    }
-  };
-
-  const openHistory = async (item: ConversationSummary) => {
-    try {
-      const conversation = await getConversation(item.id);
-      setConversationId(item.id);
-      setSelected(conversation.contact);
-      setMessages(conversation.messages);
-      setMemoryEnabled(conversation.memoryEnabled);
+    const recent = history.find((conversation) => conversation.kind === "single" && conversation.contactId === contact.id);
+    if (recent) {
+      setRequestedConversationId(recent.id);
       setActiveNav("chat");
-      setNotice("");
-    } catch (error) {
-      setNotice(operationalNotice(error, "暂时无法打开对话"));
+      return;
     }
+    const created = await createConversation(contact.id);
+    setRequestedConversationId(created.id);
+    await refreshHistory();
+    setActiveNav("chat");
   };
 
-  const send = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!content.trim() || !conversationId) return;
-
-    const outgoing = content;
-    setContent("");
-    try {
-      const result = await sendMessage(conversationId, {
-        content: outgoing,
-        mode: generationMode,
-        memoryEnabled: false
-      });
-      const replies = result.assistantMessages ?? (result.assistantMessage ? [result.assistantMessage] : []);
-      setMessages((current) => [...current, result.userMessage, ...replies]);
-      setNotice(result.notice);
-    } catch (error) {
-      setNotice(operationalNotice(error, "暂时无法发送消息"));
-    }
-  };
-
-  const toggleConversationMemory = async () => {
-    if (!conversationId) return;
-    const next = !memoryEnabled;
-    try {
-      await updateConversation(conversationId, { memoryEnabled: next });
-      setMemoryEnabled(next);
-    } catch (error) {
-      setNotice(operationalNotice(error, "暂时无法更新记忆设置"));
-    }
-  };
-
-  const openGroup = (id: string, members: Contact[]) => {
-    setConversationId(id);
-    setSelected({
-      id,
-      name: "多人讨论组",
-      tagline: `${members.map((member) => member.name).join("、")} · 顺序回复`,
-      description: "AI 联系人将按设定顺序参与讨论。",
-      avatar: "组",
-      tone: "",
-      type: "private",
-      skills: [],
-      editable: false,
-      canDelete: false
-    });
-    setMessages([]);
-    setMemoryEnabled(false);
+  const openGroup = async (group: CreateGroupResult) => {
+    setRequestedConversationId(group.id);
+    await refreshHistory();
     setActiveNav("chat");
   };
 
   const contentView = activeNav === "contacts"
-    ? <ContactsPanel contacts={contacts} onRefresh={refreshContacts} onGroupCreated={openGroup} />
+    ? (
+      <ContactsHome
+        contacts={contacts}
+        onOpenContact={openContact}
+        onGroupCreated={(group) => { void openGroup(group); }}
+        onContactsChange={refreshContacts}
+      />
+    )
     : activeNav === "apps"
       ? <AppsHome />
       : activeNav === "me"
         ? <MeHome user={user} contacts={contacts} onLogout={onLogout} />
-        : selected
-          ? (
-            <div className="conversation">
-              <div className="contact-intro">
-                <span className="contact-avatar">{selected.avatar}</span>
-                <div><b>{selected.name}</b><p>{selected.tagline} · {selected.description}</p></div>
-                <button
-                  className={`memory-toggle ${memoryEnabled ? "on" : ""}`}
-                  type="button"
-                  onClick={() => void toggleConversationMemory()}
-                >{memoryEnabled ? "记忆已开" : "记忆已关"}</button>
-              </div>
-              <div className="message-list">
-                {messages.length === 0 && <p className="conversation-empty">从一句简单的问候开始吧。</p>}
-                {messages.map((item) => <div className={`bubble ${item.role}`} key={item.id}>{item.content}</div>)}
-              </div>
-              {notice && <p className="chat-notice" role="status">{notice}</p>}
-              <form className="composer" onSubmit={send}>
-                <input
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  placeholder={`和 ${selected.name} 说点什么…`}
-                  maxLength={4000}
-                />
-                <button type="submit">发送</button>
-              </form>
-            </div>
-          )
-          : (
-            <div className="welcome">
-              <div className="welcome-orb">✦</div>
-              <h3>欢迎来到心屿，{user.nickname}</h3>
-              <p>选择一个 AI 联系人，开始一段轻松的对话。</p>
-              {notice && <p className="chat-notice" role="status">{notice}</p>}
-              {history.length > 0 && (
-                <div className="history-list">
-                  <p className="section-label">最近对话</p>
-                  {history.slice(0, 6).map((item) => (
-                    <button className="history-row" type="button" onClick={() => void openHistory(item)} key={item.id}>
-                      <span className="contact-avatar">{item.contact.avatar}</span>
-                      <span><b>{item.contact.name}{item.kind === "group" ? " · 讨论组" : ""}</b><small>{item.preview}</small></span>
-                      <time>{new Date(item.updatedAt).toLocaleDateString("zh-CN")}</time>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="contact-grid">
-                {contacts.map((contact) => (
-                  <button className="contact-card" type="button" onClick={() => void openContact(contact)} key={contact.id}>
-                    <span className="contact-avatar">{contact.avatar}</span>
-                    <span><b>{contact.name}</b><small>{contact.tagline}</small></span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
+        : (
+          <ChatShell
+            conversations={history}
+            contacts={contacts}
+            initialConversationId={requestedConversationId}
+            initialNotice={notice}
+            welcomeName={user.nickname}
+            generationMode={generationMode}
+            onGenerationModeChange={setGenerationMode}
+            onConversationsChange={refreshHistory}
+          />
+        );
 
-  const pageTitle = activeNav === "chat"
-    ? selected?.name ?? "聊天"
-    : activeNav === "contacts"
-      ? "联系人"
-      : activeNav === "apps"
-        ? "应用"
-        : "我的";
+  const pageTitle = activeNav === "contacts"
+    ? "联系人"
+    : activeNav === "apps"
+      ? "应用"
+      : activeNav === "me"
+        ? "我的"
+        : "聊天";
 
   return (
-    <main className="chat-shell">
+    <main className="app-shell">
       <AppNavigation
         active={activeNav}
         onNavigate={setActiveNav}
         profile={user}
         onLogout={() => { void onLogout(); }}
       />
-      <section className="chat-main">
-        <header>
+      <section className="app-main">
+        <header className="app-header">
           <div><p className="eyebrow">{activeNav.toUpperCase()}</p><h2>{pageTitle}</h2></div>
-          {activeNav === "chat" && (
-            <div className="mode-switch">
-              <button className={generationMode === "free" ? "active" : ""} type="button" onClick={() => setGenerationMode("free")}>免费</button>
-              <button className={generationMode === "token" ? "active" : ""} type="button" onClick={() => setGenerationMode("token")}>Token</button>
-            </div>
-          )}
         </header>
         {contentView}
       </section>
     </main>
-  );
-}
-
-function ContactsPanel({ contacts, onRefresh, onGroupCreated }: {
-  contacts: Contact[];
-  onRefresh: () => Promise<void>;
-  onGroupCreated: (id: string, members: Contact[]) => void;
-}) {
-  const [grouping, setGrouping] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
-
-  const remove = async (id: string) => {
-    try {
-      await deleteContact(id);
-      await onRefresh();
-    } catch (error) {
-      setMessage(operationalNotice(error, "暂时无法删除联系人"));
-    }
-  };
-
-  const submitGroup = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (selectedIds.length < 2) {
-      setMessage("至少选择两位 AI 联系人");
-      return;
-    }
-    try {
-      const group = await createGroup(selectedIds);
-      onGroupCreated(group.id, contacts.filter((contact) => selectedIds.includes(contact.id)));
-    } catch (error) {
-      setMessage(operationalNotice(error, "暂时无法创建讨论组"));
-    }
-  };
-
-  return (
-    <div className="module-page">
-      <div className="module-toolbar">
-        <p>官方 AI 与我的 AI 联系人将在这里分组管理。</p>
-        <button className="quiet-button" type="button" onClick={() => { setGrouping(!grouping); setMessage(""); }}>＋ 创建讨论组</button>
-      </div>
-      {message && <p className="form-message">{message}</p>}
-      {grouping && (
-        <form className="group-picker" onSubmit={submitGroup}>
-          <p>选择 AI 联系人，回复将按选择顺序进行。</p>
-          <div>
-            {contacts.map((contact) => (
-              <label key={contact.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(contact.id)}
-                  onChange={(event) => setSelectedIds(event.target.checked
-                    ? [...selectedIds, contact.id]
-                    : selectedIds.filter((id) => id !== contact.id))}
-                />
-                {contact.name}
-              </label>
-            ))}
-          </div>
-          <button className="primary-button" type="submit">开始讨论</button>
-        </form>
-      )}
-      <div className="contact-list">
-        {contacts.map((contact) => (
-          <div className="contact-row" key={contact.id}>
-            <span className="contact-avatar">{contact.avatar}</span>
-            <div className="contact-row-copy">
-              <b>{contact.name}</b>
-              <small>{contact.tagline} · {contact.type === "private" ? "私有联系人" : "官方联系人"}</small>
-              <p>{contact.description}</p>
-            </div>
-            {contact.canDelete && <button className="text-button" type="button" onClick={() => void remove(contact.id)}>删除</button>}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
