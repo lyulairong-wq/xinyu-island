@@ -5,6 +5,7 @@ import type { GenerationMode, Message } from "../../lib/chat-api";
 import type { Contact } from "../../lib/contacts-api";
 import { MessageBubble } from "./message-bubble";
 import { MessageComposer } from "./message-composer";
+import type { SkillDefinition, StartSkillSessionInput } from "../../lib/skills-api";
 
 type ConversationPaneProps = {
   title: string;
@@ -27,6 +28,9 @@ type ConversationPaneProps = {
   onContinue: (message: Message) => void;
   onToggleMemory: () => void;
   onBack: () => void;
+  skills?: readonly SkillDefinition[];
+  onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
+  onRememberSkill?: (message: Message) => void | Promise<void>;
 };
 
 export function ConversationPane({
@@ -49,7 +53,10 @@ export function ConversationPane({
   onRegenerate,
   onContinue,
   onToggleMemory,
-  onBack
+  onBack,
+  skills = [],
+  onStartSkill,
+  onRememberSkill
 }: ConversationPaneProps) {
   const contentById = new Map(messages.map((message) => [message.id, message.content]));
   let assistantOrder = 0;
@@ -91,6 +98,7 @@ export function ConversationPane({
                   onQuote={onQuote}
                   onRegenerate={onRegenerate}
                   onContinue={onContinue}
+                  onRememberSkill={onRememberSkill ? (rememberedMessage) => onRememberSkill(rememberedMessage) : undefined}
                 />
               </li>
             );
@@ -108,6 +116,8 @@ export function ConversationPane({
         generating={generating}
         notice={notice}
         contactName={kind === "group" ? title : contact.name}
+        skills={skills}
+        onStartSkill={onStartSkill}
       />
     </section>
   );

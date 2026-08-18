@@ -3,6 +3,8 @@
 import React from "react";
 import type { Message } from "../../lib/chat-api";
 import type { Contact } from "../../lib/contacts-api";
+import type { SkillCard } from "../../lib/skills-api";
+import { SkillResultCard } from "../skills/skill-result-card";
 
 type MessageBubbleProps = {
   message: Message;
@@ -11,6 +13,7 @@ type MessageBubbleProps = {
   onQuote: (message: Message) => void;
   onRegenerate: (message: Message) => void;
   onContinue: (message: Message) => void;
+  onRememberSkill?: (message: Message, card: SkillCard) => void | Promise<void>;
 };
 
 export function MessageBubble({
@@ -19,7 +22,8 @@ export function MessageBubble({
   quotedContent,
   onQuote,
   onRegenerate,
-  onContinue
+  onContinue,
+  onRememberSkill
 }: MessageBubbleProps) {
   const copy = async () => {
     try {
@@ -39,6 +43,7 @@ export function MessageBubble({
       )}
       {quotedContent && <blockquote>{quotedContent}</blockquote>}
       <p>{message.content}</p>
+      {skillCardFromMetadata(message.metadata) && <SkillResultCard card={skillCardFromMetadata(message.metadata)!} onRemember={onRememberSkill ? () => onRememberSkill(message, skillCardFromMetadata(message.metadata)!) : undefined} />}
       <div className="message-actions" aria-label="消息操作">
         <button type="button" onClick={() => void copy()}>复制</button>
         <button type="button" onClick={() => onQuote(message)}>引用</button>
@@ -51,4 +56,13 @@ export function MessageBubble({
       </div>
     </article>
   );
+}
+
+function skillCardFromMetadata(metadata: Message["metadata"]): SkillCard | undefined {
+  const candidate = metadata?.skillCard;
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const card = candidate as Partial<SkillCard>;
+  return typeof card.skill === "string" && typeof card.title === "string" && typeof card.summary === "string" && card.disclaimer === "趣味解读，仅供娱乐参考" && Array.isArray(card.actions)
+    ? card as SkillCard
+    : undefined;
 }

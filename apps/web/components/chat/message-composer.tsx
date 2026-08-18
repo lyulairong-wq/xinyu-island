@@ -2,6 +2,8 @@
 
 import React, { FormEvent } from "react";
 import type { GenerationMode, Message } from "../../lib/chat-api";
+import type { SkillDefinition, StartSkillSessionInput } from "../../lib/skills-api";
+import { SkillLauncher } from "../skills/skill-launcher";
 
 type MessageComposerProps = {
   value: string;
@@ -14,6 +16,8 @@ type MessageComposerProps = {
   generating?: boolean;
   notice?: string;
   contactName: string;
+  skills?: readonly SkillDefinition[];
+  onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
 };
 
 export function MessageComposer({
@@ -26,7 +30,9 @@ export function MessageComposer({
   onModeChange,
   generating = false,
   notice,
-  contactName
+  contactName,
+  skills = [],
+  onStartSkill
 }: MessageComposerProps) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,18 +53,24 @@ export function MessageComposer({
           <button type="button" aria-label="取消引用" onClick={onClearQuote}>×</button>
         </div>
       )}
-      <form className="message-composer" onSubmit={submit}>
-        <button className="composer-plus" type="button" aria-label="更多功能" title="技能入口将在后续任务接入" disabled>＋</button>
-        <textarea
-          aria-label="消息"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={`和 ${contactName} 说点什么…`}
-          maxLength={4000}
-          rows={2}
+      <div className="message-composer">
+        <SkillLauncher
+          skills={skills}
+          disabled={!onStartSkill}
+          onStart={(input) => onStartSkill?.({ ...input, mode })}
         />
-        <button className="send-button" type="submit" disabled={generating || !value.trim()}>发送</button>
-      </form>
+        <form className="message-composer-send" onSubmit={submit}>
+          <textarea
+            aria-label="消息"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={`和 ${contactName} 说点什么…`}
+            maxLength={4000}
+            rows={2}
+          />
+          <button className="send-button" type="submit" disabled={generating || !value.trim()}>发送</button>
+        </form>
+      </div>
       <div className="composer-footer">
         <div className="mode-switch" aria-label="生成模式">
           <button type="button" className={mode === "free" ? "active" : ""} aria-pressed={mode === "free"} onClick={() => onModeChange("free")}>免费</button>

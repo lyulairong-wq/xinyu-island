@@ -23,6 +23,7 @@ import type { Contact } from "../../lib/contacts-api";
 import { GroupCreator } from "../contacts/group-creator";
 import { ConversationList, conversationTitle } from "./conversation-list";
 import { ConversationPane } from "./conversation-pane";
+import { rememberSkillFact, skillDefinitions, startSkillSession, type SkillSessionResult } from "../../lib/skills-api";
 
 type ChatShellProps = {
   conversations: ConversationSummary[];
@@ -184,6 +185,39 @@ export function ChatShell({
     }
   };
 
+  const performSkill = async (input: Parameters<typeof startSkillSession>[1]) => {
+    if (!activeConversationId || generatingId || activeKind === "group") return;
+    const conversationId = activeConversationId;
+    setNotice("");
+    setGeneratingId(conversationId);
+    try {
+      const result: SkillSessionResult = await startSkillSession(conversationId, input);
+      if ("state" in result) {
+        setNotice("信息还不完整，可以补充后再试，或继续普通聊天。");
+        return;
+      }
+      updateMessages(conversationId, [result.userMessage, result.assistantMessage]);
+      setNotice(result.notice);
+      await refreshConversations();
+    } catch (error) {
+      setNotice(operationalNotice(error, "暂时无法开始趣味解读"));
+    } finally {
+      setGeneratingId((current) => current === conversationId ? "" : current);
+    }
+  };
+
+  const rememberSkill = async () => {
+    if (!activeConversationId || !activeContact || activeKind !== "single") return;
+    const fact = window.prompt("请输入要记住的内容。只有你确认的这句话会被保存。")?.trim();
+    if (!fact) return;
+    try {
+      await rememberSkillFact(activeConversationId, activeContact.id, { fact, sensitivity: "normal" });
+      setNotice("已保存到该联系人的记忆。");
+    } catch (error) {
+      setNotice(operationalNotice(error, "暂时无法保存记忆"));
+    }
+  };
+
   const regenerate = (message: Message) => {
     const messages = activeDetail?.messages ?? [];
     const messageIndex = messages.findIndex((item) => item.id === message.id);
@@ -292,6 +326,9 @@ export function ChatShell({
           onContinue={continueFrom}
           onToggleMemory={() => void toggleMemory()}
           onBack={() => setActiveConversationId("")}
+          skills={activeKind === "single" ? skillDefinitions(activeContact.skills) : []}
+          onStartSkill={(input) => void performSkill(input)}
+          onRememberSkill={() => void rememberSkill()}
         />
       ) : (
         <section className="chat-empty-pane">
