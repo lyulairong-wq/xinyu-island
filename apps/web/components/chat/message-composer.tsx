@@ -2,8 +2,8 @@
 
 import React, { FormEvent } from "react";
 import type { GenerationMode, Message } from "../../lib/chat-api";
-import type { SkillDefinition, StartSkillSessionInput } from "../../lib/skills-api";
-import { SkillLauncher } from "../skills/skill-launcher";
+import type { StartSkillSessionInput } from "../../lib/skills-api";
+import { SkillLauncher, type SkillLaunchOption } from "../skills/skill-launcher";
 
 type MessageComposerProps = {
   value: string;
@@ -16,7 +16,7 @@ type MessageComposerProps = {
   generating?: boolean;
   notice?: string;
   contactName: string;
-  skills?: readonly SkillDefinition[];
+  skills?: readonly SkillLaunchOption[];
   onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
 };
 

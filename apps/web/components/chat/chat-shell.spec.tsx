@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConversationDetail, ConversationSummary, SendMessageResult } from "../../lib/chat-api";
 import type { Contact } from "../../lib/contacts-api";
+import type { SkillSessionResult } from "../../lib/skills-api";
 import { ChatShell } from "./chat-shell";
 
 const contacts: Contact[] = [
@@ -31,6 +32,19 @@ const contacts: Contact[] = [
     type: "official",
     skills: ["mbti"],
     primarySkill: "mbti",
+    editable: false,
+    canDelete: false
+  },
+  {
+    id: "contact-3",
+    name: "绘",
+    tagline: "叙事解读者",
+    description: "用画面感聊聊",
+    avatar: "绘",
+    tone: "感性",
+    type: "official",
+    skills: ["tarot"],
+    primarySkill: "tarot",
     editable: false,
     canDelete: false
   }
@@ -163,5 +177,51 @@ describe("ChatShell", () => {
     await screen.findByText("重新生成的回复");
     expect(screen.getByText("原回复")).toBeVisible();
     expect(send).toHaveBeenCalledWith("conversation-1", { content: "原问题", mode: "free" });
+  });
+
+  it("starts a group skill with the selected eligible member as its target", async () => {
+    const group: ConversationSummary = {
+      id: "group-1",
+      contactId: contacts[1]!.id,
+      kind: "group",
+      title: "讨论组",
+      memoryEnabled: false,
+      archivedAt: null,
+      updatedAt: "2026-08-18T10:00:00.000Z",
+      contact: contacts[1]!,
+      preview: ""
+    };
+    const startSkill = vi.fn().mockResolvedValue({
+      state: "fallback",
+      fallback: "ordinary_chat",
+      missingInputs: [],
+      mode: "free",
+      chargedTokens: 0
+    } satisfies SkillSessionResult);
+    render(
+      <ChatShell
+        conversations={[group]}
+        contacts={contacts}
+        initialConversationId="group-1"
+        loadConversation={async () => ({ ...group, messages: [], members: [
+          { id: "member-2", contactId: "contact-2", sortOrder: 0 },
+          { id: "member-3", contactId: "contact-3", sortOrder: 1 }
+        ] })}
+        startSkill={startSkill}
+      />
+    );
+
+    await screen.findByRole("textbox", { name: "消息" });
+    fireEvent.click(screen.getByRole("button", { name: "更多功能" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "衡 · MBTI" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "你的选择" }), { target: { value: "独处，计划" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始解读" }));
+
+    await waitFor(() => expect(startSkill).toHaveBeenCalledWith("group-1", expect.objectContaining({
+      skill: "mbti",
+      targetContactId: "contact-2",
+      answers: ["独处", "计划"],
+      mode: "free"
+    })));
   });
 });

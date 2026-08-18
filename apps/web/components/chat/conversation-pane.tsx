@@ -5,7 +5,8 @@ import type { GenerationMode, Message } from "../../lib/chat-api";
 import type { Contact } from "../../lib/contacts-api";
 import { MessageBubble } from "./message-bubble";
 import { MessageComposer } from "./message-composer";
-import type { SkillDefinition, StartSkillSessionInput } from "../../lib/skills-api";
+import type { StartSkillSessionInput } from "../../lib/skills-api";
+import type { SkillLaunchOption } from "../skills/skill-launcher";
 
 type ConversationPaneProps = {
   title: string;
@@ -28,7 +29,7 @@ type ConversationPaneProps = {
   onContinue: (message: Message) => void;
   onToggleMemory: () => void;
   onBack: () => void;
-  skills?: readonly SkillDefinition[];
+  skills?: readonly SkillLaunchOption[];
   onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
   onRememberSkill?: (message: Message) => void | Promise<void>;
 };

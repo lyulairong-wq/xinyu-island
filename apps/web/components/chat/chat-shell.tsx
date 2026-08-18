@@ -24,6 +24,7 @@ import { GroupCreator } from "../contacts/group-creator";
 import { ConversationList, conversationTitle } from "./conversation-list";
 import { ConversationPane } from "./conversation-pane";
 import { rememberSkillFact, skillDefinitions, startSkillSession, type SkillSessionResult } from "../../lib/skills-api";
+import type { SkillLaunchOption } from "../skills/skill-launcher";
 
 type ChatShellProps = {
   conversations: ConversationSummary[];
@@ -45,6 +46,7 @@ type ChatShellProps = {
     archivedAt: string | null;
   }>;
   remove?: (conversationId: string) => Promise<{ success: true }>;
+  startSkill?: (conversationId: string, input: Parameters<typeof startSkillSession>[1]) => Promise<SkillSessionResult>;
 };
 
 export function ChatShell({
@@ -61,7 +63,8 @@ export function ChatShell({
   createDirect = createConversationRequest,
   createDiscussionGroup = createGroupRequest,
   update = updateConversationRequest,
-  remove = deleteConversationRequest
+  remove = deleteConversationRequest,
+  startSkill = startSkillSession
 }: ChatShellProps) {
   const [activeConversationId, setActiveConversationId] = useState(initialConversationId ?? "");
   const [details, setDetails] = useState<Record<string, ConversationDetail>>({});
@@ -186,12 +189,12 @@ export function ChatShell({
   };
 
   const performSkill = async (input: Parameters<typeof startSkillSession>[1]) => {
-    if (!activeConversationId || generatingId || activeKind === "group") return;
+    if (!activeConversationId || generatingId) return;
     const conversationId = activeConversationId;
     setNotice("");
     setGeneratingId(conversationId);
     try {
-      const result: SkillSessionResult = await startSkillSession(conversationId, input);
+      const result: SkillSessionResult = await startSkill(conversationId, input);
       if ("state" in result) {
         setNotice("信息还不完整，可以补充后再试，或继续普通聊天。");
         return;
@@ -284,6 +287,15 @@ export function ChatShell({
   const title = activeSummary
     ? conversationTitle(activeSummary)
     : activeDetail?.title?.trim() || (activeKind === "group" ? "多人讨论组" : activeContact?.name ?? "对话");
+  const skillOptions: SkillLaunchOption[] = activeKind === "group"
+    ? members.flatMap((member) => skillDefinitions(member.skills).map((skill) => ({
+        skill,
+        targetContactId: member.id,
+        label: `${member.name} · ${skill.title}`
+      })))
+    : activeContact
+      ? skillDefinitions(activeContact.skills).map((skill) => ({ skill }))
+      : [];
 
   return (
     <div className={`chat-workspace ${newChatSurface ? "new-chat-open" : activeConversationId ? "show-conversation" : "show-list"}`}>
@@ -326,7 +338,7 @@ export function ChatShell({
           onContinue={continueFrom}
           onToggleMemory={() => void toggleMemory()}
           onBack={() => setActiveConversationId("")}
-          skills={activeKind === "single" ? skillDefinitions(activeContact.skills) : []}
+          skills={skillOptions}
           onStartSkill={(input) => void performSkill(input)}
           onRememberSkill={() => void rememberSkill()}
         />
