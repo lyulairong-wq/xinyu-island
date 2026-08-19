@@ -35,6 +35,17 @@ describe("ConsentChecklist", () => {
     expect(screen.getByRole("checkbox", { name: /娱乐使用提示.*内部封闭测试版 v1.0/ })).toBeInTheDocument();
   });
 
+  it("opens readable consent content without navigating to a missing page anchor", () => {
+    render(<ChecklistHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: /用户协议.*内部封闭测试版 v1.0/ }));
+
+    expect(screen.getByRole("dialog", { name: /用户协议/ })).toHaveTextContent("仅供娱乐参考");
+    expect(window.location.hash).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "关闭协议内容" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("keeps registration disabled until every required consent is selected", () => {
     render(<HomePage />);
 
