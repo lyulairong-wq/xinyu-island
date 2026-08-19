@@ -41,6 +41,7 @@ export function SkillLauncher({ skills, onStart, disabled = false }: SkillLaunch
     try {
       await onStart({ skill: selected.skill.code, ...values, ...(selected.targetContactId ? { targetContactId: selected.targetContactId } : {}) });
       setSelected(undefined);
+      setShowNotice(false);
     } finally {
       setPending(false);
     }
@@ -52,8 +53,7 @@ export function SkillLauncher({ skills, onStart, disabled = false }: SkillLaunch
       {open && <div className="skill-menu" role="menu" aria-label="趣味技能">
         {options.map((option) => <button type="button" role="menuitem" key={`${option.targetContactId ?? "direct"}-${option.skill.code}`} onClick={() => choose(option)}>{option.label ?? option.skill.title}</button>)}
       </div>}
-      {showNotice && <p role="status">趣味解读，仅供娱乐参考</p>}
-      {selected && <SkillInputFlow skill={selected.skill} onSubmit={start} onCancel={() => setSelected(undefined)} pending={pending} />}
+      {selected && <SkillInputFlow skill={selected.skill} notice={showNotice ? "趣味解读，仅供娱乐参考" : undefined} onSubmit={start} onCancel={() => { setSelected(undefined); setShowNotice(false); }} pending={pending} />}
     </div>
   );
 }

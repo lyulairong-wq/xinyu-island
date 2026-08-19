@@ -24,7 +24,9 @@ describe("SkillLauncher", () => {
     render(<SkillLauncher skills={[tarot]} onStart={onStart} />);
     fireEvent.click(screen.getByRole("button", { name: "更多功能" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "塔罗" }));
-    expect(screen.getByRole("status")).toHaveTextContent("趣味解读，仅供娱乐参考");
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("趣味解读，仅供娱乐参考");
+    expect(notice.closest("form")).toHaveClass("skill-input-flow");
     fireEvent.change(screen.getByRole("textbox", { name: "想聊的主题" }), { target: { value: "最近的感受" } });
     fireEvent.click(screen.getByRole("button", { name: "开始解读" }));
     expect(onStart).toHaveBeenCalledWith({ skill: "tarot", topic: "最近的感受" });

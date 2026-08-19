@@ -17,6 +17,7 @@ type SkillInputFlowProps = {
   onSubmit: (values: SkillInputValues) => void | Promise<void>;
   onCancel: () => void;
   pending?: boolean;
+  notice?: string;
 };
 
 const labels: Record<SkillInputCode, string> = {
@@ -28,7 +29,7 @@ const labels: Record<SkillInputCode, string> = {
   number: "选择一个数字"
 };
 
-export function SkillInputFlow({ skill, onSubmit, onCancel, pending = false }: SkillInputFlowProps) {
+export function SkillInputFlow({ skill, onSubmit, onCancel, pending = false, notice }: SkillInputFlowProps) {
   const [values, setValues] = useState<SkillInputValues>({});
   const allInputs = [...skill.requiredInputs, ...(skill.optionalInputs ?? [])];
 
@@ -39,6 +40,7 @@ export function SkillInputFlow({ skill, onSubmit, onCancel, pending = false }: S
 
   return (
     <form className="skill-input-flow" aria-label={`${skill.title}最少信息`} onSubmit={submit}>
+      {notice && <p className="skill-input-notice" role="status">{notice}</p>}
       <p>{skill.summary}</p>
       {allInputs.map((input) => (
         <label key={input}>
