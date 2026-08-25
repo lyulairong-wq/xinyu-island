@@ -22,6 +22,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const [query, setQuery] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<ConversationSummary | null>(null);
+  const [archiveCandidate, setArchiveCandidate] = useState<ConversationSummary | null>(null);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("zh-CN");
     return [...conversations]
@@ -67,8 +68,8 @@ export function ConversationList({
                 <time dateTime={conversation.updatedAt}>{formatRecentDate(conversation.updatedAt)}</time>
               </button>
               <div className="conversation-actions">
-                <button type="button" aria-label={`归档 ${title}`} onClick={() => void onArchive(conversation)}>归档</button>
-                <button type="button" aria-label={`删除 ${title}`} onClick={() => setDeleteCandidate(conversation)}>删除</button>
+                <button type="button" aria-label={`归档 ${title}`} onClick={() => { setDeleteCandidate(null); setArchiveCandidate(conversation); }}>归档</button>
+                <button type="button" aria-label={`删除 ${title}`} onClick={() => { setArchiveCandidate(null); setDeleteCandidate(conversation); }}>删除</button>
               </div>
             </article>
           );
@@ -89,6 +90,23 @@ export function ConversationList({
                 setDeleteCandidate(null);
               }}
             >确认删除</button>
+          </div>
+        </div>
+      )}
+      {archiveCandidate && (
+        <div className="confirmation-panel conversation-confirmation" role="alertdialog" aria-label={`归档 ${conversationTitle(archiveCandidate)}`}>
+          <p>归档后会从最近对话中隐藏；聊天记录、用量流水和联系人长期记忆会保留。</p>
+          <div className="form-actions">
+            <button className="quiet-button" type="button" onClick={() => setArchiveCandidate(null)}>取消</button>
+            <button
+              className="primary-button"
+              type="button"
+              aria-label={`确认归档 ${conversationTitle(archiveCandidate)}`}
+              onClick={() => {
+                void onArchive(archiveCandidate);
+                setArchiveCandidate(null);
+              }}
+            >确认归档</button>
           </div>
         </div>
       )}

@@ -46,12 +46,14 @@ describe("ConversationList", () => {
     expect(screen.getByText("没有匹配的对话")).toBeVisible();
   });
 
-  it("requires confirmation before deleting and exposes archive independently", () => {
+  it("requires confirmation before archiving or deleting", () => {
     const onArchive = vi.fn();
     const onDelete = vi.fn();
     render(<ConversationList conversations={conversations} onSelect={vi.fn()} onArchive={onArchive} onDelete={onDelete} onNewChat={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "归档 周末讨论组" }));
+    expect(onArchive).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认归档 周末讨论组" }));
     expect(onArchive).toHaveBeenCalledWith(conversations[0]);
 
     fireEvent.click(screen.getByRole("button", { name: "删除 周末讨论组" }));

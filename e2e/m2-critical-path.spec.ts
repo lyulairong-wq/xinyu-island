@@ -82,3 +82,44 @@ test("记忆按联系人保存和删除", async ({ page }) => {
   await page.getByRole("button", { name: "删除记忆：E2E 只保存给当前联系人" }).click();
   await expect(page.getByText("E2E 只保存给当前联系人", { exact: true })).not.toBeVisible();
 });
+
+test("归档和删除对话均要求明确确认", async ({ page }) => {
+  await register(page, "会话确认");
+  await openOfficialContact(page, "岚");
+
+  await page.getByRole("button", { name: "归档 岚" }).click();
+  const archiveConfirmation = page.getByRole("alertdialog", { name: "归档 岚" });
+  await expect(archiveConfirmation).toContainText("归档后会从最近对话中隐藏");
+  const archiveResponse = page.waitForResponse((response) => response.url().includes("/settings") && response.request().method() === "PATCH");
+  await archiveConfirmation.getByRole("button", { name: "确认归档 岚" }).click();
+  expect((await archiveResponse).status()).toBe(200);
+  await expect(page.getByRole("button", { name: "归档 岚" })).not.toBeVisible();
+
+  await page.getByRole("button", { name: "新建", exact: true }).click();
+  await page.getByRole("button", { name: /^单聊/ }).click();
+  await page.getByRole("button", { name: /绘.*单聊/ }).click();
+  await page.getByRole("button", { name: "删除 绘" }).click();
+  const deleteConfirmation = page.getByRole("alertdialog", { name: "删除 绘" });
+  await expect(deleteConfirmation).toContainText("仅删除聊天记录");
+  const deleteResponse = page.waitForResponse((response) => response.url().includes("/chat/conversations/") && response.request().method() === "DELETE");
+  await deleteConfirmation.getByRole("button", { name: "确认删除 绘" }).click();
+  expect((await deleteResponse).status()).toBe(200);
+  await expect(page.getByRole("button", { name: "删除 绘" })).not.toBeVisible();
+});
+
+test.describe("窄屏聊天", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("单聊进入与返回对话列表不会遮挡底部导航", async ({ page }) => {
+    await register(page, "窄屏");
+    await openOfficialContact(page, "岚");
+
+    await expect(page.locator(".conversation-pane")).toBeVisible();
+    await expect(page.locator(".conversation-sidebar")).toBeHidden();
+    const backButton = page.getByRole("button", { name: "返回对话列表" });
+    await expect(backButton).toBeVisible();
+    await backButton.click();
+    await expect(page.locator(".conversation-sidebar")).toBeVisible();
+    await expect(page.locator(".app-navigation")).toBeVisible();
+  });
+});
