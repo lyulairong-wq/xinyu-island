@@ -30,7 +30,9 @@ export class MockAiProvider implements AiProvider {
   async *generate(request: GenerationRequest): AsyncIterable<GenerationEvent> {
     yield { type: "started", provider: "mock" };
     const content = request.content.trim();
-    const text = content.includes("你好") || content.includes("嗨")
+    const text = content.startsWith("趣味技能回合")
+      ? "我会以轻松的方式陪你完成这次趣味解读。你最想从哪个角度开始感受？"
+      : content.includes("你好") || content.includes("嗨")
       ? `你好，我是${this.name}。今天想从哪里开始聊？`
       : content.endsWith("吗") || content.includes("？")
         ? `我听见你的好奇了。关于“${content.slice(0, 28)}”，我们可以先从你最在意的部分慢慢聊起。`

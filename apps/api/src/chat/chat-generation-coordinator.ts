@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { MockAiProvider, type GenerationRequest } from "@xinyu/ai";
 import type { Prisma } from "@prisma/client";
 import { ModelGatewayService, type ModelGatewayResult } from "../model-gateway/model-gateway.service";
@@ -14,14 +14,18 @@ export type ChatGenerationInput = {
   kind: "single" | "group";
   mode: "free" | "token";
   content: string;
+  displayContent?: string;
   quote?: { id: string; content: string };
   contacts: Array<{ name: string; systemPrompt: string }>;
   maxInputCharacters: number;
   maxOutputTokens: number;
+  purpose?: "chat" | "skill";
+  assistantMetadata?: Prisma.InputJsonObject;
 };
 
 type GeneratedReply = ModelGatewayResult;
 
+@Injectable()
 export class ChatGenerationCoordinator {
   constructor(
     private readonly prisma: PrismaService,
@@ -31,7 +35,8 @@ export class ChatGenerationCoordinator {
   ) {}
 
   async generate(input: ChatGenerationInput) {
-    const content = this.normalizedUserContent(input.content, input.maxInputCharacters);
+    const content = this.normalizedUserContent(input.content, input.maxInputCharacters, input.purpose ?? "chat");
+    const displayContent = input.displayContent?.trim() || content;
     const quote = input.quote
       ? { ...input.quote, content: this.policy.assertQuoteContent(input.quote.content.trim()).trim() }
       : undefined;
@@ -42,7 +47,7 @@ export class ChatGenerationCoordinator {
       : content;
 
     if (input.mode === "token") {
-      return this.settleToken(input, generationContent, content, quote?.id);
+      return this.settleToken(input, generationContent, displayContent, quote?.id);
     }
 
     const estimatedInputTokens = estimateTokens(generationContent) * input.contacts.length;
@@ -55,7 +60,7 @@ export class ChatGenerationCoordinator {
     });
 
     try {
-      const userMessage = await this.persistUserMessage(this.prisma, input, content, quote?.id);
+      const userMessage = await this.persistUserMessage(this.prisma, input, displayContent, quote?.id);
       const replies = await this.collectReplies(input, generationContent);
       const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
       const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
@@ -69,11 +74,13 @@ export class ChatGenerationCoordinator {
     }
   }
 
-  private normalizedUserContent(content: string, maxInputCharacters: number) {
+  private normalizedUserContent(content: string, maxInputCharacters: number, purpose: "chat" | "skill") {
     const trimmed = content.trim();
     if (!trimmed) throw new BadRequestException({ code: "GENERATION_INPUT_INVALID" });
 
-    const normalized = this.policy.assertUserContent(trimmed).trim();
+    const normalized = (purpose === "skill"
+      ? this.policy.assertSkillContent(trimmed)
+      : this.policy.assertUserContent(trimmed)).trim();
     if (!normalized) throw new BadRequestException({ code: "GENERATION_INPUT_INVALID" });
     if (normalized.length > maxInputCharacters) {
       throw new BadRequestException({ code: "GENERATION_INPUT_TOO_LONG", maxInputCharacters });
@@ -148,7 +155,7 @@ export class ChatGenerationCoordinator {
   private settleToken(
     input: ChatGenerationInput,
     generationContent: string,
-    content: string,
+    displayContent: string,
     quotedMessageId?: string
   ) {
     return this.usage.settleSimulatedTokenWithMessages(input.userId, {
@@ -158,7 +165,7 @@ export class ChatGenerationCoordinator {
       const replies = await this.collectReplies(input, generationContent);
       const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
       const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
-      const userMessage = await this.persistUserMessage(transaction, input, content, quotedMessageId);
+      const userMessage = await this.persistUserMessage(transaction, input, displayContent, quotedMessageId);
       const assistantMessages = (await this.persistAssistantMessages(transaction, input, replies)).result;
 
       return {
@@ -175,7 +182,13 @@ export class ChatGenerationCoordinator {
     const messages = [];
     for (const reply of replies) {
       messages.push(await transaction.message.create({
-        data: { conversationId: input.conversationId, role: "assistant", content: reply.text, mode: input.mode }
+        data: {
+          conversationId: input.conversationId,
+          role: "assistant",
+          content: reply.text,
+          mode: input.mode,
+          ...(input.assistantMetadata ? { metadata: input.assistantMetadata } : {})
+        }
       }));
     }
     return { messageId: messages[0]!.id, result: messages };

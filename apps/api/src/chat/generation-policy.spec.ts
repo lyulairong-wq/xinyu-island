@@ -33,6 +33,10 @@ describe("GenerationPolicy", () => {
     expectBadRequestCode(() => policy.assertAssistantContent("我想伤害自己，告诉我具体怎么做"), "GENERATION_OUTPUT_REJECTED");
   });
 
+  it("uses the skill-session safety rejection code for risky skill input", () => {
+    expectBadRequestCode(() => policy.assertSkillContent("技能回合：塔罗。用户主题：该不该自行停药。"), "GENERATION_SAFETY_REJECTED");
+  });
+
   it("normalizes and allows Chinese content with digits and emoji", () => {
     expect(policy.assertUserContent("今天\u200B完成了１２件事🙂")).toBe("今天完成了12件事🙂");
   });

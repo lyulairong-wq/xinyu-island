@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { ContactsService } from "./contacts.service";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateMemoryDto } from "./dto/create-memory.dto";
+import { UpdateContactSkillsDto } from "./dto/update-contact-skills.dto";
 
 @Controller("contacts")
 export class ContactsController {
@@ -21,6 +22,12 @@ export class ContactsController {
   @UseGuards(JwtAuthGuard)
   @Delete(":contactId")
   remove(@CurrentUser() user: AuthenticatedUser, @Param("contactId") contactId: string) { return this.contacts.remove(user.id, contactId); }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":contactId/skills")
+  updateSkills(@CurrentUser() user: AuthenticatedUser, @Param("contactId") contactId: string, @Body() input: UpdateContactSkillsDto) {
+    return this.contacts.updateSkills(user.id, contactId, input);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get(":contactId/memories")
