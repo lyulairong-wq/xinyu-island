@@ -29,7 +29,7 @@ export class StartSkillSessionDto extends GenerationRequestDto {
   answers?: string[];
 
   @IsOptional()
-  @Matches(/^(?:0?[1-9]|1[0-2])-(?:0?[1-9]|[12]\d|3[01])$/)
+  @Matches(/^(?:(?:0?[1-9]|1[0-2])-(?:0?[1-9]|[12]\d|3[01])|(?:0?[1-9]|1[0-2])月(?:0?[1-9]|[12]\d|3[01])日?)$/)
   monthDay?: string;
 
   @IsOptional()

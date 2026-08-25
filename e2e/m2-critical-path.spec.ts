@@ -57,6 +57,21 @@ test("技能提示位于输入卡片内，结果卡片带娱乐声明", async ({
   expect(transcript).not.toContain("固定说明");
 });
 
+test("星座接受自然中文月日输入", async ({ page }) => {
+  await register(page, "星座月日");
+  await openOfficialContact(page, "星");
+
+  await page.getByRole("button", { name: "更多功能" }).click();
+  await page.getByRole("menuitem", { name: "星座", exact: true }).click();
+  const skillForm = page.getByRole("form", { name: "星座最少信息" });
+  await skillForm.getByRole("textbox", { name: "生日（月日）" }).fill("5月20日");
+  const response = page.waitForResponse((candidate) => candidate.url().includes("/skill-sessions") && candidate.request().method() === "POST");
+  await skillForm.getByRole("button", { name: "开始解读" }).click();
+
+  expect((await response).status()).toBe(201);
+  await expect(page.getByLabel("星座趣味解读")).toBeVisible();
+});
+
 test("讨论组按成员生成回复，并要求显式选择技能目标", async ({ page }) => {
   await register(page, "群聊");
   await page.getByRole("button", { name: "新建", exact: true }).click();

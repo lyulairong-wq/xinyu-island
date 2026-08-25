@@ -54,7 +54,7 @@ export function SkillInputFlow({ skill, onSubmit, onCancel, pending = false, not
           ) : input === "number" ? (
             <input aria-label={labels[input]} type="number" inputMode="numeric" onChange={(event) => setValues((current) => ({ ...current, number: Number(event.target.value) }))} />
           ) : (
-            <input aria-label={labels[input]} type={input === "birthDate" ? "date" : "text"} onChange={(event) => setValues((current) => ({ ...current, [input]: event.target.value }))} />
+            <input aria-label={labels[input]} type={input === "birthDate" ? "date" : "text"} placeholder={input === "monthDay" ? "例如 5月20日或05-20" : undefined} onChange={(event) => setValues((current) => ({ ...current, [input]: event.target.value }))} />
           )}
         </label>
       ))}
