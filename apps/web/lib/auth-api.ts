@@ -6,6 +6,7 @@ export type AuthUser = {
   email: string;
   ageBand: string;
   status: string;
+  defaultMemoryEnabled: boolean;
   createdAt: string;
 };
 

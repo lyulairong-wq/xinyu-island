@@ -132,6 +132,18 @@ describe("AuthService", () => {
     });
   });
 
+  it("includes the default memory preference in the authenticated profile", async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: "user-1", email: "user@example.com", nickname: "Xinyu", ageBand: "18_plus", status: "active",
+      defaultMemoryEnabled: true, createdAt: new Date("2026-08-09T00:00:00.000Z")
+    });
+
+    await expect(service.getProfile("user-1")).resolves.toMatchObject({ defaultMemoryEnabled: true });
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ defaultMemoryEnabled: true })
+    }));
+  });
+
   it("lists only active sessions belonging to the current user", async () => {
     await service.getSessions("user-1");
 

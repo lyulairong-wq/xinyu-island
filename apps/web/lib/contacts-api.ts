@@ -41,6 +41,12 @@ export type CreateContactInput = ContactSkillConfiguration & {
 };
 
 export type CreateMemoryInput = Pick<ContactMemory, "fact" | "sensitivity">;
+export type UpdateContactInput = CreateContactInput;
+export type RemoveContactInput = { deleteConversations?: boolean; deleteMemories?: boolean };
+export type DeletedContactRecords = {
+  conversations: Array<{ id: string; contactId: string; contactSnapshot: unknown; createdAt: string; updatedAt: string }>;
+  memories: Array<{ id: string; contactId: string; fact: string; createdAt: string; updatedAt: string }>;
+};
 
 export function listContacts(): Promise<Contact[]> {
   return authenticatedRequest<Contact[]>("/contacts");
@@ -60,10 +66,18 @@ export function updateContactSkills(contactId: string, input: ContactSkillConfig
   });
 }
 
-export function deleteContact(contactId: string): Promise<{ success: true }> {
+export function updateContact(contactId: string, input: UpdateContactInput): Promise<Contact> {
+  return authenticatedRequest<Contact>(`/contacts/${encodeURIComponent(contactId)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteContact(contactId: string, input: RemoveContactInput = {}): Promise<{ success: true }> {
   return authenticatedRequest<{ success: true }>(`/contacts/${encodeURIComponent(contactId)}`, {
-    method: "DELETE"
+    method: "DELETE", body: JSON.stringify(input)
   });
+}
+
+export function listDeletedContactRecords(): Promise<DeletedContactRecords> {
+  return authenticatedRequest<DeletedContactRecords>("/contacts/deleted-records");
 }
 
 export function listContactMemories(contactId: string): Promise<ContactMemory[]> {

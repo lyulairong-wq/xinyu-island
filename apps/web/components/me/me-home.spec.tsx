@@ -13,6 +13,7 @@ const user: AuthUser = {
   email: "user@example.com",
   ageBand: "18_plus",
   status: "active",
+  defaultMemoryEnabled: false,
   createdAt: "2026-08-18T00:00:00.000Z"
 };
 
@@ -38,5 +39,6 @@ describe("MeHome", () => {
     expect(screen.getByRole("heading", { name: "用户协议" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "设置" })).toBeVisible();
     expect(screen.getByText("Token 模拟用量")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "新建单聊默认开启长期记忆" })).not.toBeChecked();
   });
 });

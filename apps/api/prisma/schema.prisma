@@ -61,6 +61,7 @@ model Conversation {
   id        String    @id @default(cuid())
   userId    String
   contactId String
+  contactSnapshot Json?
   kind      String    @default("single")
   title     String?
   memoryEnabled Boolean @default(false)
@@ -177,6 +178,7 @@ model ConversationMember {
   id             String       @id @default(cuid())
   conversationId String
   contactId      String
+  contactSnapshot Json?
   sortOrder      Int
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

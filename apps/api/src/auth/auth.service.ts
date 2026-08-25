@@ -58,7 +58,7 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, nickname: true, ageBand: true, status: true, createdAt: true }
+      select: { id: true, email: true, nickname: true, ageBand: true, status: true, defaultMemoryEnabled: true, createdAt: true }
     });
     if (!user) throw new UnauthorizedException("用户不存在");
     return user;

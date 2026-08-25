@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { operationalNotice } from "../../lib/api-client";
 import type { AuthUser } from "../../lib/auth-api";
 import type { Contact } from "../../lib/contacts-api";
+import { listDeletedContactRecords, updateDefaultMemory, type DeletedContactRecords } from "../../lib/contacts-api";
 import { getUsageSummary, type UsageSummary } from "../../lib/usage-api";
 import { MemoryManager } from "./memory-manager";
 
@@ -12,11 +13,15 @@ type MeHomeProps = {
   contacts: Contact[];
   onLogout: () => Promise<void>;
   loadUsage?: () => Promise<UsageSummary>;
+  saveDefaultMemory?: (enabled: boolean) => Promise<{ defaultMemoryEnabled: boolean }>;
+  loadDeletedRecords?: () => Promise<DeletedContactRecords>;
 };
 
-export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary }: MeHomeProps) {
+export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary, saveDefaultMemory = updateDefaultMemory, loadDeletedRecords = listDeletedContactRecords }: MeHomeProps) {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [notice, setNotice] = useState("");
+  const [defaultMemoryEnabled, setDefaultMemoryEnabled] = useState(user.defaultMemoryEnabled);
+  const [deletedRecords, setDeletedRecords] = useState<DeletedContactRecords | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -29,6 +34,25 @@ export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary }
       });
     return () => { active = false; };
   }, [loadUsage]);
+
+  const changeDefaultMemory = async (enabled: boolean) => {
+    setNotice("");
+    try {
+      const result = await saveDefaultMemory(enabled);
+      setDefaultMemoryEnabled(result.defaultMemoryEnabled);
+    } catch (error) {
+      setNotice(operationalNotice(error, "暂时无法保存记忆设置"));
+    }
+  };
+
+  const showDeletedRecords = async () => {
+    setNotice("");
+    try {
+      setDeletedRecords(await loadDeletedRecords());
+    } catch (error) {
+      setNotice(operationalNotice(error, "暂时无法加载已删除 AI 记录"));
+    }
+  };
 
   return (
     <div className="module-page me-home">
@@ -48,12 +72,20 @@ export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary }
       <section className="me-section" aria-labelledby="memory-heading">
         <h3 id="memory-heading">记忆管理</h3>
         <p>长期记忆仅用于对应的 AI 联系人，不会跨联系人共享。</p>
+        <label><input type="checkbox" checked={defaultMemoryEnabled} onChange={(event) => void changeDefaultMemory(event.target.checked)} />新建单聊默认开启长期记忆</label>
+        <p>仅影响之后新建的单聊；你仍可在每个对话中单独开关。</p>
         <MemoryManager contacts={contacts} />
       </section>
 
       <section className="me-section" aria-labelledby="privacy-heading">
         <h3 id="privacy-heading">隐私与安全</h3>
         <p>查看封闭测试期间的数据使用、安全边界与隐私说明。</p>
+        <button className="quiet-button" type="button" onClick={() => void showDeletedRecords()}>已删除 AI 记录</button>
+        {deletedRecords && <div className="deleted-records" aria-label="已删除 AI 记录">
+          <p>保留记录仅供查看；如需彻底删除，请在对应聊天或记忆管理中操作。</p>
+          <p>保留单聊：{deletedRecords.conversations.length} 条</p>
+          <p>保留记忆：{deletedRecords.memories.length} 条</p>
+        </div>}
       </section>
 
       <section className="me-section" aria-labelledby="agreement-heading">

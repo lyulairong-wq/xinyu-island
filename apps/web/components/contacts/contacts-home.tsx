@@ -6,8 +6,10 @@ import { createGroup, type CreateGroupResult } from "../../lib/chat-api";
 import {
   createContact,
   deleteContact,
+  updateContact,
   type Contact,
-  type CreateContactInput
+  type CreateContactInput,
+  type UpdateContactInput
 } from "../../lib/contacts-api";
 import { ContactEditor, type ContactProfileDraft } from "./contact-editor";
 import { GroupCreator } from "./group-creator";
@@ -18,7 +20,8 @@ type ContactsHomeProps = {
   onGroupCreated: (group: CreateGroupResult) => void;
   onContactsChange: () => void | Promise<void>;
   createPrivate?: (input: CreateContactInput) => Promise<Contact>;
-  removePrivate?: (contactId: string) => Promise<{ success: true }>;
+  updatePrivate?: (contactId: string, input: UpdateContactInput) => Promise<Contact>;
+  removePrivate?: (contactId: string, input: { deleteConversations?: boolean; deleteMemories?: boolean }) => Promise<{ success: true }>;
   createDiscussionGroup?: (contactIds: string[]) => Promise<CreateGroupResult>;
 };
 
@@ -28,11 +31,15 @@ export function ContactsHome({
   onGroupCreated,
   onContactsChange,
   createPrivate = createContact,
+  updatePrivate = updateContact,
   removePrivate = deleteContact,
   createDiscussionGroup = createGroup
 }: ContactsHomeProps) {
   const [surface, setSurface] = useState<"editor" | "group" | null>(null);
+  const [editing, setEditing] = useState<Contact | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Contact | null>(null);
+  const [deleteConversations, setDeleteConversations] = useState(false);
+  const [deleteMemories, setDeleteMemories] = useState(false);
   const [notice, setNotice] = useState("");
   const official = contacts.filter((contact) => contact.type === "official");
   const privateContacts = contacts.filter((contact) => contact.type === "private");
@@ -49,7 +56,7 @@ export function ContactsHome({
   const create = async (draft: ContactProfileDraft) => {
     setNotice("");
     try {
-      await createPrivate(withTaskFiveSkillDefault(draft));
+      await createPrivate(draft);
       await onContactsChange();
       setSurface(null);
     } catch (error) {
@@ -57,12 +64,20 @@ export function ContactsHome({
     }
   };
 
+  const update = async (draft: ContactProfileDraft) => {
+    if (!editing) return;
+    try { await updatePrivate(editing.id, draft); await onContactsChange(); setEditing(null); }
+    catch (error) { setNotice(operationalNotice(error, "暂时无法更新联系人")); }
+  };
+
   const remove = async (contact: Contact) => {
     setNotice("");
     try {
-      await removePrivate(contact.id);
+      await removePrivate(contact.id, { deleteConversations, deleteMemories });
       await onContactsChange();
       setDeleteCandidate(null);
+      setDeleteConversations(false);
+      setDeleteMemories(false);
     } catch (error) {
       setNotice(operationalNotice(error, "暂时无法删除联系人"));
     }
@@ -90,14 +105,18 @@ export function ContactsHome({
       </div>
       {notice && <p className="form-message" role="status">{notice}</p>}
       {surface === "editor" && <ContactEditor onCreate={create} onCancel={() => setSurface(null)} />}
+      {editing && <ContactEditor contact={editing} onCreate={update} onCancel={() => setEditing(null)} submitLabel="保存修改" />}
       {surface === "group" && <GroupCreator contacts={contacts} onCreate={createGroupFrom} onCancel={() => setSurface(null)} />}
-      <ContactSection title="官方 AI" contacts={official} onOpen={open} onDeleteCandidate={setDeleteCandidate} />
-      <ContactSection title="我的 AI" contacts={privateContacts} onOpen={open} onDeleteCandidate={setDeleteCandidate} empty="还没有私有 AI 联系人。" />
+      <ContactSection title="官方 AI" contacts={official} onOpen={open} onDeleteCandidate={setDeleteCandidate} onEdit={setEditing} />
+      <ContactSection title="我的 AI" contacts={privateContacts} onOpen={open} onDeleteCandidate={setDeleteCandidate} onEdit={setEditing} empty="还没有私有 AI 联系人。" />
       {deleteCandidate && (
         <div className="confirmation-panel" role="alertdialog" aria-label={`删除 ${deleteCandidate.name}`}>
           <p>确定删除“{deleteCandidate.name}”吗？相关设置将不可恢复。</p>
+          <label><input type="checkbox" checked={deleteConversations} onChange={(event) => setDeleteConversations(event.target.checked)} />同时删除与该 AI 的单聊记录</label>
+          <label><input type="checkbox" checked={deleteMemories} onChange={(event) => setDeleteMemories(event.target.checked)} />同时删除该 AI 的长期记忆</label>
+          <p>未勾选的数据会保留在“我的 → 数据与隐私 → 已删除 AI 记录”中，仅可查看或彻底删除。</p>
           <div className="form-actions">
-            <button className="quiet-button" type="button" onClick={() => setDeleteCandidate(null)}>取消</button>
+            <button className="quiet-button" type="button" onClick={() => { setDeleteCandidate(null); setDeleteConversations(false); setDeleteMemories(false); }}>取消</button>
             <button className="danger-button" type="button" onClick={() => void remove(deleteCandidate)}>确认删除</button>
           </div>
         </div>
@@ -105,12 +124,12 @@ export function ContactsHome({
     </div>
   );
 }
-
-function ContactSection({ title, contacts, onOpen, onDeleteCandidate, empty }: {
+function ContactSection({ title, contacts, onOpen, onDeleteCandidate, onEdit, empty }: {
   title: string;
   contacts: Contact[];
   onOpen: (contact: Contact) => void | Promise<void>;
   onDeleteCandidate: (contact: Contact) => void;
+  onEdit: (contact: Contact) => void;
   empty?: string;
 }) {
   const sectionId = title === "官方 AI" ? "official-contacts" : "private-contacts";
@@ -129,18 +148,11 @@ function ContactSection({ title, contacts, onOpen, onDeleteCandidate, empty }: {
                 <span>{contact.description}</span>
               </span>
             </button>
+            {contact.editable && <button className="text-button" type="button" onClick={() => onEdit(contact)}>编辑</button>}
             {contact.canDelete && <button className="text-button" type="button" onClick={() => onDeleteCandidate(contact)}>删除</button>}
           </article>
         ))}
       </div>
     </section>
   );
-}
-
-function withTaskFiveSkillDefault(draft: ContactProfileDraft): CreateContactInput {
-  return {
-    ...draft,
-    skillCodes: ["tarot"],
-    primarySkill: "tarot"
-  };
 }

@@ -13,6 +13,7 @@ const authenticatedUser: AuthUser = {
   nickname: "测试",
   ageBand: "18_plus",
   status: "active",
+  defaultMemoryEnabled: false,
   createdAt: "2026-08-09T00:00:00.000Z"
 };
 

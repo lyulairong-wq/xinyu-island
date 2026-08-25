@@ -65,7 +65,9 @@ export class ChatService {
   async createConversation(userId: string, contactId: string, memoryEnabled?: boolean) {
     const contact = await this.contacts.resolve(userId, contactId);
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { defaultMemoryEnabled: true } });
-    const conversation = await this.prisma.conversation.create({ data: { userId, contactId, kind: "single", memoryEnabled: memoryEnabled ?? user?.defaultMemoryEnabled ?? false } });
+    const conversation = await this.prisma.conversation.create({
+      data: { userId, contactId, contactSnapshot: this.contactSnapshot(contact), kind: "single", memoryEnabled: memoryEnabled ?? user?.defaultMemoryEnabled ?? false }
+    });
     return { id: conversation.id, contact, memoryEnabled: conversation.memoryEnabled };
   }
 
@@ -79,7 +81,7 @@ export class ChatService {
         contactId: contacts[0]!.id,
         kind: "group",
         memoryEnabled: memoryEnabled ?? user?.defaultMemoryEnabled ?? false,
-        members: { create: contacts.map((contact, index) => ({ contactId: contact.id, sortOrder: index })) }
+        members: { create: contacts.map((contact, index) => ({ contactId: contact.id, contactSnapshot: this.contactSnapshot(contact), sortOrder: index })) }
       }
     });
     return { id: conversation.id, kind: "group", members: contacts, memoryEnabled: conversation.memoryEnabled };
@@ -87,12 +89,12 @@ export class ChatService {
 
   async getConversation(userId: string, conversationId: string) {
     const conversation = await this.getOwnedConversation(userId, conversationId);
-    return { ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId) };
+    return { ...conversation, contact: await this.resolveDisplayContact(userId, conversation.contactId, conversation.contactSnapshot) };
   }
 
   async listConversations(userId: string, includeArchived = false) {
-    const conversations = await this.prisma.conversation.findMany({ where: { userId, ...(includeArchived ? {} : { archivedAt: null }) }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, contactId: true, kind: true, title: true, memoryEnabled: true, archivedAt: true, updatedAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { content: true } } } });
-    return Promise.all(conversations.map(async (conversation) => ({ ...conversation, contact: await this.contacts.resolve(userId, conversation.contactId), preview: conversation.messages[0]?.content ?? "尚未开始聊天" })));
+    const conversations = await this.prisma.conversation.findMany({ where: { userId, ...(includeArchived ? {} : { archivedAt: null }) }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, contactId: true, contactSnapshot: true, kind: true, title: true, memoryEnabled: true, archivedAt: true, updatedAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { content: true } } } });
+    return Promise.all(conversations.map(async (conversation) => ({ ...conversation, contact: await this.resolveDisplayContact(userId, conversation.contactId, conversation.contactSnapshot), preview: conversation.messages[0]?.content ?? "尚未开始聊天" })));
   }
 
   async updateConversation(userId: string, conversationId: string, input: { memoryEnabled?: boolean; title?: string; archived?: boolean }) {
@@ -159,6 +161,50 @@ export class ChatService {
         })
       : [];
     return memories.map((memory) => memory.fact);
+  }
+
+  private contactSnapshot(contact: Awaited<ReturnType<ContactsService["resolve"]>>) {
+    return {
+      id: contact.id,
+      name: contact.name,
+      tagline: contact.tagline,
+      description: contact.description,
+      avatar: contact.avatar,
+      tone: contact.tone,
+      skills: Array.isArray(contact.skills) ? [...contact.skills] : [],
+      ...(contact.primarySkill ? { primarySkill: contact.primarySkill } : {})
+    };
+  }
+
+  private async resolveDisplayContact(userId: string, contactId: string, snapshot: unknown) {
+    try {
+      return await this.contacts.resolve(userId, contactId);
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+      const retained = this.retainedContactSnapshot(snapshot);
+      if (!retained) throw error;
+      return retained;
+    }
+  }
+
+  private retainedContactSnapshot(snapshot: unknown) {
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+    const value = snapshot as Record<string, unknown>;
+    if (typeof value.id !== "string" || typeof value.name !== "string") return null;
+    return {
+      id: value.id,
+      name: value.name,
+      tagline: typeof value.tagline === "string" ? value.tagline : "已删除的 AI 联系人",
+      description: typeof value.description === "string" ? value.description : "",
+      avatar: typeof value.avatar === "string" ? value.avatar : value.name.slice(0, 1),
+      tone: typeof value.tone === "string" ? value.tone : "",
+      skills: Array.isArray(value.skills) ? value.skills.filter((skill): skill is string => typeof skill === "string") : [],
+      ...(typeof value.primarySkill === "string" ? { primarySkill: value.primarySkill } : {}),
+      type: "private" as const,
+      editable: false,
+      canDelete: false,
+      unavailable: true
+    };
   }
 
   async deleteMessage(userId: string, conversationId: string, messageId: string) {

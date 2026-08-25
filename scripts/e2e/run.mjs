@@ -14,6 +14,20 @@ const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const localChrome = process.platform === "win32"
   ? resolve(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe")
   : "";
+
+function resolveWorkspaceTool(parts) {
+  let candidate = root;
+  while (true) {
+    const tool = resolve(candidate, "node_modules", ...parts);
+    if (existsSync(tool)) return tool;
+    const parent = dirname(candidate);
+    if (parent === candidate) throw new Error(`Unable to locate workspace tool: ${parts.join("/")}`);
+    candidate = parent;
+  }
+}
+
+const nextBin = resolveWorkspaceTool(["next", "dist", "bin", "next"]);
+const playwrightCli = resolveWorkspaceTool(["@playwright", "test", "cli.js"]);
 const environment = {
   ...process.env,
   NODE_ENV: "test",
@@ -122,9 +136,9 @@ try {
   await run(npm, ["run", "build"]);
   apiProcess = start("node", ["apps/api/dist/main.js"]);
   await waitForHttp(`http://127.0.0.1:${apiPort}/api/v1/health/ready`);
-  webProcess = start("node", [resolve(root, "node_modules/next/dist/bin/next"), "start", "-p", String(webPort)], resolve(root, "apps/web"));
+  webProcess = start("node", [nextBin, "start", "-p", String(webPort)], resolve(root, "apps/web"));
   await waitForHttp(`http://127.0.0.1:${webPort}`);
-  await run("node", ["node_modules/@playwright/test/cli.js", "test", ...process.argv.slice(2)]);
+  await run("node", [playwrightCli, "test", ...process.argv.slice(2)]);
 } finally {
   await cleanup();
 }
