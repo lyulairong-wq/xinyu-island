@@ -14,6 +14,7 @@ export type ChatGenerationInput = {
   kind: "single" | "group";
   mode: "free" | "token";
   content: string;
+  displayContent?: string;
   quote?: { id: string; content: string };
   contacts: Array<{ name: string; systemPrompt: string }>;
   maxInputCharacters: number;
@@ -35,6 +36,7 @@ export class ChatGenerationCoordinator {
 
   async generate(input: ChatGenerationInput) {
     const content = this.normalizedUserContent(input.content, input.maxInputCharacters, input.purpose ?? "chat");
+    const displayContent = input.displayContent?.trim() || content;
     const quote = input.quote
       ? { ...input.quote, content: this.policy.assertQuoteContent(input.quote.content.trim()).trim() }
       : undefined;
@@ -45,7 +47,7 @@ export class ChatGenerationCoordinator {
       : content;
 
     if (input.mode === "token") {
-      return this.settleToken(input, generationContent, content, quote?.id);
+      return this.settleToken(input, generationContent, displayContent, quote?.id);
     }
 
     const estimatedInputTokens = estimateTokens(generationContent) * input.contacts.length;
@@ -58,7 +60,7 @@ export class ChatGenerationCoordinator {
     });
 
     try {
-      const userMessage = await this.persistUserMessage(this.prisma, input, content, quote?.id);
+      const userMessage = await this.persistUserMessage(this.prisma, input, displayContent, quote?.id);
       const replies = await this.collectReplies(input, generationContent);
       const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
       const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
@@ -153,7 +155,7 @@ export class ChatGenerationCoordinator {
   private settleToken(
     input: ChatGenerationInput,
     generationContent: string,
-    content: string,
+    displayContent: string,
     quotedMessageId?: string
   ) {
     return this.usage.settleSimulatedTokenWithMessages(input.userId, {
@@ -163,7 +165,7 @@ export class ChatGenerationCoordinator {
       const replies = await this.collectReplies(input, generationContent);
       const inputTokens = replies.reduce((sum, reply) => sum + reply.inputTokens, 0);
       const outputTokens = replies.reduce((sum, reply) => sum + reply.outputTokens, 0);
-      const userMessage = await this.persistUserMessage(transaction, input, content, quotedMessageId);
+      const userMessage = await this.persistUserMessage(transaction, input, displayContent, quotedMessageId);
       const assistantMessages = (await this.persistAssistantMessages(transaction, input, replies)).result;
 
       return {

@@ -97,4 +97,19 @@ describe("MockAiProvider", () => {
     expect(completed?.text).toContain("你好");
     expect(completed?.text).not.toMatch(/\p{Script=Latin}/u);
   });
+
+  it("does not echo internal skill instructions in mock replies", async () => {
+    const events = [];
+    for await (const event of new MockAiProvider().generate({
+      conversationId: "conversation-1",
+      content: "趣味技能回合：塔罗。玩法边界：不将抽取结果说成确定事实。用户主题：新的测试主题。",
+      mode: "free",
+      maxOutputTokens: 512
+    })) events.push(event);
+
+    const completed = events.find((event) => event.type === "completed");
+    expect(completed?.text).toContain("趣味解读");
+    expect(completed?.text).not.toContain("玩法边界");
+    expect(completed?.text).not.toContain("新的测试主题");
+  });
 });

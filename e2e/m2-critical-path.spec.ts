@@ -51,6 +51,10 @@ test("技能提示位于输入卡片内，结果卡片带娱乐声明", async ({
   const card = page.getByLabel("MBTI趣味解读");
   await expect(card).toBeVisible();
   await expect(card).toContainText("趣味解读，仅供娱乐参考");
+  const transcript = await page.getByRole("list", { name: "消息记录" }).innerText();
+  expect(transcript).toContain("我想体验一次MBTI趣味解读。");
+  expect(transcript).not.toContain("玩法边界");
+  expect(transcript).not.toContain("固定说明");
 });
 
 test("讨论组按成员生成回复，并要求显式选择技能目标", async ({ page }) => {

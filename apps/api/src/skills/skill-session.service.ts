@@ -74,6 +74,7 @@ export class SkillSessionService {
       kind: "single",
       mode: input.mode,
       content: this.structuredContent(definition, input),
+      displayContent: this.displayContent(definition),
       contacts: [{
         name: contact.name,
         systemPrompt: [
@@ -176,6 +177,10 @@ export class SkillSessionService {
       "请只用中文完成一次中性、非确定性的趣味解读，并以一个开放式反思问题结束。"
     ];
     return lines.join("\n");
+  }
+
+  private displayContent(definition: SkillDefinition) {
+    return `我想体验一次${definition.title}趣味解读。`;
   }
 
   private inputLines(input: StartSkillSessionDto) {

@@ -208,6 +208,12 @@ describe("SkillSessionService", () => {
       }
     });
     expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: "我想体验一次塔罗趣味解读。",
+    });
+    expect(JSON.stringify(messages[0])).not.toContain("最近的感受");
+    expect(JSON.stringify(messages[0])).not.toContain("玩法边界");
     expect(messages[0]).not.toHaveProperty("metadata");
     expect(generate).toHaveBeenCalledTimes(1);
     expect(usage.reserveFree).toHaveBeenCalledTimes(1);
@@ -306,6 +312,12 @@ describe("SkillSessionService", () => {
     expect(metadata).not.toContain("2001-01-01");
     expect(metadata).not.toContain("子时");
     expect(JSON.stringify(messages[1]?.metadata)).toBe(metadata);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: "我想体验一次紫微斗数趣味解读。",
+    });
+    expect(JSON.stringify(messages[0])).not.toContain("2001-01-01");
+    expect(JSON.stringify(messages[0])).not.toContain("子时");
   });
 
   it("writes only a user-selected fact through the explicit contact-memory action", async () => {
