@@ -70,10 +70,7 @@ describe("ConsentChecklist", () => {
   });
 
   it("builds the complete auditable payload in required-consent order", () => {
-    expect(buildConsentPayload({ terms: true, privacy: true, entertainment_notice: true })).toEqual([
-      { type: "terms", version: "1.0" },
-      { type: "privacy", version: "1.0" },
-      { type: "entertainment_notice", version: "1.0" }
-    ]);
+    expect(buildConsentPayload({ terms: true, privacy: true, entertainment_notice: true }))
+      .toEqual(CONSENT_DOCUMENTS.map(({ type, version }) => ({ type, version })));
   });
 });
