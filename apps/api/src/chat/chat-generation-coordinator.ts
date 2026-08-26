@@ -179,6 +179,7 @@ export class ChatGenerationCoordinator {
   }
 
   private async persistAssistantMessages(transaction: Prisma.TransactionClient, input: ChatGenerationInput, replies: GeneratedReply[]) {
+    await this.assertActiveOwnedConversation(transaction, input);
     const messages = [];
     for (const reply of replies) {
       messages.push(await transaction.message.create({
@@ -194,12 +195,13 @@ export class ChatGenerationCoordinator {
     return { messageId: messages[0]!.id, result: messages };
   }
 
-  private persistUserMessage(
+  private async persistUserMessage(
     client: PrismaService | Prisma.TransactionClient,
     input: ChatGenerationInput,
     content: string,
     quotedMessageId?: string
   ) {
+    await this.assertActiveOwnedConversation(client, input);
     return client.message.create({
       data: {
         conversationId: input.conversationId,
@@ -209,6 +211,17 @@ export class ChatGenerationCoordinator {
         ...(quotedMessageId ? { quotedMessageId } : {})
       }
     });
+  }
+
+  private async assertActiveOwnedConversation(
+    client: PrismaService | Prisma.TransactionClient,
+    input: ChatGenerationInput
+  ): Promise<void> {
+    const conversation = await client.conversation.findFirst({
+      where: { id: input.conversationId, userId: input.userId, user: { status: "active" } },
+      select: { id: true }
+    });
+    if (!conversation) throw new BadRequestException({ code: "GENERATION_CONTEXT_UNAVAILABLE" });
   }
 
   private response(

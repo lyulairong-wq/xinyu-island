@@ -75,6 +75,9 @@ function createHarness() {
     estimatedOutputTokens: 512
   };
   const prisma = {
+    conversation: {
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "conversation-1" }))
+    },
     message: {
       create: vi.fn(async ({ data }: { data: { role: string; content: string; mode: string; quotedMessageId?: string } }) => {
         if (data.role !== "user") throw new Error("assistant write bypassed settlement");
@@ -84,6 +87,9 @@ function createHarness() {
     }
   };
   const transaction = {
+    conversation: {
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "conversation-1" }))
+    },
     message: {
       create: vi.fn(async ({ data }: { data: { role: string; content: string; mode: string } }) => {
         if (data.role === "user") {
@@ -261,6 +267,30 @@ describe("ChatGenerationCoordinator", () => {
     expect(transaction.message.create).not.toHaveBeenCalled();
     expect(usage.finalizeFreeWithMessage).not.toHaveBeenCalled();
     expect(usage.releaseFree).toHaveBeenCalledWith(reservation);
+  });
+
+  it("releases a Free reservation when the conversation is deleted before assistant persistence", async () => {
+    const { coordinator, prisma, reservation, transaction, usage } = createHarness();
+
+    prisma.conversation.findFirst.mockResolvedValueOnce({ id: "conversation-1" });
+    transaction.conversation.findFirst.mockResolvedValueOnce(null);
+
+    await expectBadRequestCode(coordinator.generate(input()), "GENERATION_CONTEXT_UNAVAILABLE");
+
+    expect(prisma.message.create.mock.calls.map(([call]) => call.data.role)).toEqual(["user"]);
+    expect(transaction.message.create).not.toHaveBeenCalled();
+    expect(usage.releaseFree).toHaveBeenCalledWith(reservation);
+  });
+
+  it("rolls back Token settlement when the conversation is unavailable before its first write", async () => {
+    const { coordinator, transaction, usage } = createHarness();
+
+    transaction.conversation.findFirst.mockResolvedValueOnce(null);
+
+    await expectBadRequestCode(coordinator.generate(input({ mode: "token" })), "GENERATION_CONTEXT_UNAVAILABLE");
+
+    expect(transaction.message.create).not.toHaveBeenCalled();
+    expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
   });
 
   it("persists skill card metadata only after a safe output passes policy", async () => {
