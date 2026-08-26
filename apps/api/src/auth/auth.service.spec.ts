@@ -23,13 +23,15 @@ const baseInput = {
 };
 
 const transaction = {
-  user: { create: vi.fn() },
+  user: { create: vi.fn(), delete: vi.fn() },
   consentRecord: { createMany: vi.fn() },
-  tokenAccount: { create: vi.fn() }
+  tokenAccount: { create: vi.fn() },
+  userSession: { updateMany: vi.fn() }
 };
 
 const prisma = {
   user: { findUnique: vi.fn() },
+  consentRecord: { findMany: vi.fn() },
   userSession: { create: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn()
 };
@@ -46,6 +48,8 @@ describe("AuthService", () => {
     transaction.user.create.mockResolvedValue({ id: "user-1" });
     transaction.consentRecord.createMany.mockResolvedValue({ count: 3 });
     transaction.tokenAccount.create.mockResolvedValue({ id: "token-account-1" });
+    transaction.user.delete.mockResolvedValue({ id: "user-1" });
+    transaction.userSession.updateMany.mockResolvedValue({ count: 1 });
     prisma.userSession.create.mockResolvedValue({ id: "session-1" });
     prisma.userSession.update.mockResolvedValue({ id: "session-1" });
     prisma.userSession.updateMany.mockResolvedValue({ count: 1 });
@@ -152,5 +156,75 @@ describe("AuthService", () => {
       select: { id: true, deviceLabel: true, lastSeenAt: true, expiresAt: true, createdAt: true },
       orderBy: { lastSeenAt: "desc" }
     });
+  });
+
+  it("returns the current user's active consent documents in the shared catalog order", async () => {
+    const termsGrantedAt = new Date("2026-08-01T00:00:00.000Z");
+    const privacyGrantedAt = new Date("2026-08-02T00:00:00.000Z");
+    const noticeGrantedAt = new Date("2026-08-03T00:00:00.000Z");
+    prisma.consentRecord.findMany.mockResolvedValue([
+      { consentType: "privacy", grantedAt: privacyGrantedAt },
+      { consentType: "entertainment_notice", grantedAt: noticeGrantedAt },
+      { consentType: "terms", grantedAt: termsGrantedAt }
+    ]);
+
+    await expect(service.getConsents("user-1")).resolves.toEqual({
+      documents: [
+        expect.objectContaining({ type: "terms", version: "1.0", grantedAt: termsGrantedAt }),
+        expect.objectContaining({ type: "privacy", version: "1.0", grantedAt: privacyGrantedAt }),
+        expect.objectContaining({ type: "entertainment_notice", version: "1.0", grantedAt: noticeGrantedAt })
+      ]
+    });
+
+    expect(prisma.consentRecord.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", granted: true, revokedAt: null },
+      select: { consentType: true, grantedAt: true }
+    });
+  });
+
+  it("rejects a missing required active consent as an invalid authorization state", async () => {
+    prisma.consentRecord.findMany.mockResolvedValue([
+      { consentType: "terms", grantedAt: new Date("2026-08-01T00:00:00.000Z") },
+      { consentType: "privacy", grantedAt: new Date("2026-08-02T00:00:00.000Z") }
+    ]);
+
+    await expect(service.getConsents("user-1")).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects an invalid account-deletion password without deleting the user", async () => {
+    prisma.user.findUnique.mockResolvedValue({ passwordHash: "password-hash" });
+    vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+
+    await expect(service.deleteAccount("user-1", "wrong-password")).rejects.toMatchObject({ status: 400 });
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(transaction.user.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects account deletion for a missing authenticated user", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+
+    await expect(service.deleteAccount("user-1", "password123")).rejects.toMatchObject({ status: 401 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("revokes every session and hard-deletes the user in one transaction", async () => {
+    prisma.user.findUnique.mockResolvedValue({ passwordHash: "password-hash" });
+
+    await expect(service.deleteAccount("user-1", "password123")).resolves.toBeUndefined();
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      select: { passwordHash: true }
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.userSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      data: { revokedAt: expect.any(Date) }
+    });
+    expect(transaction.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
+    expect(transaction.userSession.updateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      transaction.user.delete.mock.invocationCallOrder[0]!
+    );
   });
 });

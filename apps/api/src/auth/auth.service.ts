@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { CONSENT_DOCUMENTS } from "@xinyu/contracts";
 import * as bcrypt from "bcrypt";
 import { createHash } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -69,6 +70,35 @@ export class AuthService {
       where: { userId, revokedAt: null },
       select: { id: true, deviceLabel: true, lastSeenAt: true, expiresAt: true, createdAt: true },
       orderBy: { lastSeenAt: "desc" }
+    });
+  }
+
+  async getConsents(userId: string) {
+    const records = await this.prisma.consentRecord.findMany({
+      where: { userId, granted: true, revokedAt: null },
+      select: { consentType: true, grantedAt: true }
+    });
+    const recordsByType = new Map(records.map((record) => [record.consentType, record]));
+    const documents = CONSENT_DOCUMENTS.map((document) => {
+      const record = recordsByType.get(document.type);
+      if (!record) throw new UnauthorizedException("登录状态已失效");
+      return { ...document, grantedAt: record.grantedAt };
+    });
+    return { documents };
+  }
+
+  async deleteAccount(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true }
+    });
+    if (!user) throw new UnauthorizedException("登录状态已失效");
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      throw new BadRequestException({ code: "ACCOUNT_DELETION_INVALID" });
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userSession.updateMany({ where: { userId }, data: { revokedAt: new Date() } });
+      await tx.user.delete({ where: { id: userId } });
     });
   }
 
