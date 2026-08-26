@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import HomePage from "../../app/page";
+import { CONSENT_DOCUMENTS } from "@xinyu/contracts";
 import {
   buildConsentPayload,
   ConsentChecklist,
@@ -33,6 +34,14 @@ describe("ConsentChecklist", () => {
     expect(screen.getByRole("checkbox", { name: /用户协议.*内部封闭测试版 v1.0/ })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /隐私政策.*内部封闭测试版 v1.0/ })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /娱乐使用提示.*内部封闭测试版 v1.0/ })).toBeInTheDocument();
+  });
+
+  it("renders titles from the shared consent document catalog", () => {
+    render(<ChecklistHarness />);
+
+    for (const document of CONSENT_DOCUMENTS) {
+      expect(screen.getByRole("button", { name: document.title })).toBeInTheDocument();
+    }
   });
 
   it("opens readable consent content without navigating to a missing page anchor", () => {

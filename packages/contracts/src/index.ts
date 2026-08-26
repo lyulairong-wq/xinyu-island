@@ -5,6 +5,7 @@ export type AiMode = "free" | "token";
 export type ConversationKind = "direct" | "group";
 
 export * from "./skills.js";
+export * from "./consent-documents.js";
 
 export interface HealthResponse {
   service: "xinyu-api";
