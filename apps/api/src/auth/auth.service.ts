@@ -75,7 +75,7 @@ export class AuthService {
 
   async getConsents(userId: string) {
     const records = await this.prisma.consentRecord.findMany({
-      where: { userId, granted: true, revokedAt: null },
+      where: { userId, granted: true, revokedAt: null, documentVersion: CURRENT_CONSENT_DOCUMENT_VERSION },
       select: { consentType: true, grantedAt: true }
     });
     const recordsByType = new Map(records.map((record) => [record.consentType, record]));

@@ -1,4 +1,5 @@
 import { JwtService } from "@nestjs/jwt";
+import { CURRENT_CONSENT_DOCUMENT_VERSION } from "@xinyu/contracts";
 import * as bcrypt from "bcrypt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
@@ -177,9 +178,24 @@ describe("AuthService", () => {
     });
 
     expect(prisma.consentRecord.findMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", granted: true, revokedAt: null },
+      where: { userId: "user-1", granted: true, revokedAt: null, documentVersion: CURRENT_CONSENT_DOCUMENT_VERSION },
       select: { consentType: true, grantedAt: true }
     });
+  });
+
+  it("rejects a stale required consent record instead of presenting it as the current document", async () => {
+    const records = [
+      { consentType: "terms", documentVersion: "0.9", grantedAt: new Date("2026-07-01T00:00:00.000Z") },
+      { consentType: "privacy", documentVersion: "1.0", grantedAt: new Date("2026-08-01T00:00:00.000Z") },
+      { consentType: "entertainment_notice", documentVersion: "1.0", grantedAt: new Date("2026-08-01T00:00:00.000Z") }
+    ];
+    prisma.consentRecord.findMany.mockImplementation(async ({ where }: { where: { documentVersion?: string } }) =>
+      records
+        .filter((record) => !where.documentVersion || record.documentVersion === where.documentVersion)
+        .map(({ consentType, grantedAt }) => ({ consentType, grantedAt }))
+    );
+
+    await expect(service.getConsents("user-1")).rejects.toMatchObject({ status: 401 });
   });
 
   it("rejects a missing required active consent as an invalid authorization state", async () => {
