@@ -58,10 +58,9 @@ describe("HomePage logout", () => {
 
   it("clears the deleted session without logout and shows one short anonymous success notice", async () => {
     const events: string[] = [];
-    const removeItem = window.localStorage.removeItem.bind(window.localStorage);
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (key) {
       events.push(`clear:${key}`);
-      removeItem(key);
+      throw new Error("storage is unavailable");
     });
     window.localStorage.setItem(ACCESS_TOKEN_KEY, "access-token");
 
@@ -102,7 +101,7 @@ describe("HomePage logout", () => {
     fireEvent.click(screen.getByRole("button", { name: "立即注销账号" }));
 
     await screen.findByRole("button", { name: "进入心屿" });
-    expect(window.localStorage.getItem(ACCESS_TOKEN_KEY)).toBeNull();
+    expect(window.localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("access-token");
     expect(screen.getAllByText("账号已注销，相关个人数据已删除。")).toHaveLength(1);
     expect(events).toEqual([
       'delete:{"password":"password123","confirmed":true}',

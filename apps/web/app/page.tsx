@@ -30,8 +30,10 @@ export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [message, setMessage] = useState("");
+  const [forceAnonymous, setForceAnonymous] = useState(false);
 
   const handleAuthenticated = (authenticatedUser: AuthUser) => {
+    setForceAnonymous(false);
     setMessage("");
     setUser(authenticatedUser);
   };
@@ -50,9 +52,13 @@ export default function HomePage() {
   };
 
   const handleAccountDeleted = async () => {
-    getBrowserTokenStorage()?.clear();
-    setUser(null);
-    setMessage("账号已注销，相关个人数据已删除。");
+    try {
+      getBrowserTokenStorage()?.clear();
+    } finally {
+      setForceAnonymous(true);
+      setUser(null);
+      setMessage("账号已注销，相关个人数据已删除。");
+    }
   };
 
   if (user) {
@@ -61,6 +67,7 @@ export default function HomePage() {
 
   return (
     <AuthGate
+      forceAnonymous={forceAnonymous}
       onAuthenticated={handleAuthenticated}
       loading={<div aria-live="polite" role="status" />}
       authenticated={(restoredUser) => (
