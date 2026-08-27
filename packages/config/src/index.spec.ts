@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "./index";
+import { loadBetaConfig, loadConfig } from "./index";
 
 describe("loadConfig", () => {
   const validEnv = {
@@ -75,5 +75,20 @@ describe("loadConfig", () => {
     { FREE_MODEL_NAME: "qwen3" }
   ])("rejects incomplete model endpoint configuration", (modelEnv) => {
     expect(() => loadConfig({ ...validEnv, ...modelEnv })).toThrow("FREE_MODEL");
+  });
+
+  it("uses open local defaults and parses explicit external beta switches", () => {
+    expect(loadBetaConfig({})).toMatchObject({ registrationEnabled: true, requireInviteCode: false, allowMockFallback: true });
+    expect(loadBetaConfig({
+      BETA_REGISTRATION_ENABLED: "false",
+      BETA_REQUIRE_INVITE_CODE: "true",
+      BETA_REQUIRE_ADULT: "true",
+      BETA_GENERATION_ENABLED: "false",
+      BETA_ALLOW_MOCK_FALLBACK: "false",
+      BETA_TOKEN_MODE_ENABLED: "false",
+      BETA_APPS_ENABLED: "false",
+      BETA_FEEDBACK_ENABLED: "true",
+      BETA_PROJECT_TOKEN_LIMIT: "20000000"
+    })).toMatchObject({ registrationEnabled: false, requireInviteCode: true, requireAdult: true, generationEnabled: false, allowMockFallback: false, tokenModeEnabled: false, appsEnabled: false, feedbackEnabled: true, projectTokenLimit: 20_000_000 });
   });
 });

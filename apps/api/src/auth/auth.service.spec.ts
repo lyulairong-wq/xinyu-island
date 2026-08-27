@@ -27,7 +27,8 @@ const transaction = {
   user: { create: vi.fn(), delete: vi.fn() },
   consentRecord: { createMany: vi.fn() },
   tokenAccount: { create: vi.fn() },
-  userSession: { updateMany: vi.fn() }
+  userSession: { updateMany: vi.fn() },
+  inviteCode: { updateMany: vi.fn() }
 };
 
 const prisma = {
@@ -51,6 +52,7 @@ describe("AuthService", () => {
     transaction.tokenAccount.create.mockResolvedValue({ id: "token-account-1" });
     transaction.user.delete.mockResolvedValue({ id: "user-1" });
     transaction.userSession.updateMany.mockResolvedValue({ count: 1 });
+    transaction.inviteCode.updateMany.mockResolvedValue({ count: 1 });
     prisma.userSession.create.mockResolvedValue({ id: "session-1" });
     prisma.userSession.update.mockResolvedValue({ id: "session-1" });
     prisma.userSession.updateMany.mockResolvedValue({ count: 1 });
@@ -108,6 +110,36 @@ describe("AuthService", () => {
         expect.objectContaining({ documentVersion: "1.0" })
       ])
     });
+  });
+
+  it("requires an unredeemed invite code only when beta invite enforcement is enabled", async () => {
+    const previous = process.env.BETA_REQUIRE_INVITE_CODE;
+    process.env.BETA_REQUIRE_INVITE_CODE = "true";
+    try {
+      await expect(service.register(baseInput)).rejects.toMatchObject({ status: 403 });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.BETA_REQUIRE_INVITE_CODE;
+      else process.env.BETA_REQUIRE_INVITE_CODE = previous;
+    }
+  });
+
+  it("binds a valid invite code to the newly created account inside registration transaction", async () => {
+    const previous = process.env.BETA_REQUIRE_INVITE_CODE;
+    process.env.BETA_REQUIRE_INVITE_CODE = "true";
+    prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "user-1", email: "user@example.com", nickname: "Xinyu", ageBand: "18_plus", status: "active", createdAt: new Date()
+    });
+    try {
+      await service.register({ ...baseInput, inviteCode: "BETA-1234" });
+      expect(transaction.inviteCode.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ redeemedAt: null, revokedAt: null }),
+        data: expect.objectContaining({ redeemedByUserId: "user-1" })
+      }));
+    } finally {
+      if (previous === undefined) delete process.env.BETA_REQUIRE_INVITE_CODE;
+      else process.env.BETA_REQUIRE_INVITE_CODE = previous;
+    }
   });
 
   it("looks up a normalized email before creating a login session", async () => {

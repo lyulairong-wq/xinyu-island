@@ -14,6 +14,19 @@ export interface AppConfig {
     freeDailyLimit: number;
     userCooldownMs: number;
   };
+  beta: BetaConfig;
+}
+
+export interface BetaConfig {
+    registrationEnabled: boolean;
+    requireInviteCode: boolean;
+    requireAdult: boolean;
+    generationEnabled: boolean;
+    allowMockFallback: boolean;
+    tokenModeEnabled: boolean;
+    appsEnabled: boolean;
+    feedbackEnabled: boolean;
+    projectTokenLimit: number;
 }
 
 function parsePositiveInteger(env: NodeJS.ProcessEnv, name: string, defaultValue: number): number {
@@ -30,6 +43,14 @@ function parsePositiveInteger(env: NodeJS.ProcessEnv, name: string, defaultValue
   }
 
   return parsed;
+}
+
+function parseBoolean(env: NodeJS.ProcessEnv, name: string, defaultValue: boolean): boolean {
+  const value = env[name];
+  if (value === undefined) return defaultValue;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be true or false`);
 }
 
 function parseModelEndpoint(env: NodeJS.ProcessEnv): { baseUrl: string; model: string; apiKey?: string } {
@@ -55,6 +76,20 @@ function parseModelEndpoint(env: NodeJS.ProcessEnv): { baseUrl: string; model: s
 
   const apiKey = env.FREE_MODEL_API_KEY?.trim() || undefined;
   return apiKey ? { baseUrl, model, apiKey } : { baseUrl, model };
+}
+
+export function loadBetaConfig(env: NodeJS.ProcessEnv): BetaConfig {
+  return {
+    registrationEnabled: parseBoolean(env, "BETA_REGISTRATION_ENABLED", true),
+    requireInviteCode: parseBoolean(env, "BETA_REQUIRE_INVITE_CODE", false),
+    requireAdult: parseBoolean(env, "BETA_REQUIRE_ADULT", false),
+    generationEnabled: parseBoolean(env, "BETA_GENERATION_ENABLED", true),
+    allowMockFallback: parseBoolean(env, "BETA_ALLOW_MOCK_FALLBACK", true),
+    tokenModeEnabled: parseBoolean(env, "BETA_TOKEN_MODE_ENABLED", true),
+    appsEnabled: parseBoolean(env, "BETA_APPS_ENABLED", true),
+    feedbackEnabled: parseBoolean(env, "BETA_FEEDBACK_ENABLED", false),
+    projectTokenLimit: parsePositiveInteger(env, "BETA_PROJECT_TOKEN_LIMIT", 20_000_000)
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
@@ -90,6 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
       maxInputCharacters: parsePositiveInteger(env, "FREE_MAX_INPUT_CHARS", 2000),
       freeDailyLimit: parsePositiveInteger(env, "FREE_TOKEN_LIMIT", 6000),
       userCooldownMs: parsePositiveInteger(env, "FREE_USER_COOLDOWN_MS", 3000)
-    }
+    },
+    beta: loadBetaConfig(env)
   };
 }

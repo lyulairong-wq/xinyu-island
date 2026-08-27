@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { CONSENT_DOCUMENTS } from "@xinyu/contracts";
+import { loadBetaConfig } from "@xinyu/config";
 import * as bcrypt from "bcrypt";
 import { createHash } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -15,6 +16,9 @@ export class AuthService {
   constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService) {}
 
   async register(input: RegisterDto) {
+    const beta = loadBetaConfig(process.env);
+    if (!beta.registrationEnabled) throw new ForbiddenException({ code: "BETA_REGISTRATION_PAUSED" });
+    if (beta.requireAdult && input.ageBand !== "18_plus") throw new ForbiddenException({ code: "BETA_ADULT_ONLY" });
     const email = normalizeEmail(input.email);
     const consentTypes = input.consents.map((consent) => consent.type);
     if (!hasRequiredConsents(consentTypes)) {
@@ -23,6 +27,7 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException("该邮箱已注册");
 
+    const inviteCodeHash = beta.requireInviteCode ? this.inviteCodeHash(input.inviteCode) : undefined;
     const passwordHash = await bcrypt.hash(input.password, 12);
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -38,7 +43,14 @@ export class AuthService {
             source: "web"
           }))
       });
-      await tx.tokenAccount.create({ data: { userId: created.id, freeResetAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+      await tx.tokenAccount.create({ data: { userId: created.id, freeResetAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), freeLimit: this.freeDailyLimit() } });
+      if (inviteCodeHash) {
+        const redeemed = await tx.inviteCode.updateMany({
+          where: { codeHash: inviteCodeHash, expiresAt: { gt: new Date() }, redeemedAt: null, revokedAt: null },
+          data: { redeemedAt: new Date(), redeemedByUserId: created.id }
+        });
+        if (redeemed.count !== 1) throw new ForbiddenException({ code: "BETA_INVITE_INVALID" });
+      }
       return created;
     });
     return this.createSession(user.id, input.deviceLabel);
@@ -112,5 +124,16 @@ export class AuthService {
     const tokenHash = createHash("sha256").update(accessToken).digest("hex");
     await this.prisma.userSession.update({ where: { id: session.id }, data: { tokenHash } });
     return { accessToken, sessionId: session.id, user: await this.getProfile(userId), requiredConsentTypes: REQUIRED_CONSENT_TYPES };
+  }
+
+  private inviteCodeHash(code: string | undefined): string {
+    const normalized = code?.trim().toUpperCase();
+    if (!normalized) throw new ForbiddenException({ code: "BETA_INVITE_REQUIRED" });
+    return createHash("sha256").update(normalized).digest("hex");
+  }
+
+  private freeDailyLimit(): number {
+    const value = Number(process.env.FREE_TOKEN_LIMIT ?? 6_000);
+    return Number.isSafeInteger(value) && value > 0 ? value : 6_000;
   }
 }

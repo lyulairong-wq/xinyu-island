@@ -28,6 +28,11 @@ export class RegisterDto {
   @IsIn(["under_13", "13_15", "16_17", "18_plus", "undisclosed"])
   ageBand!: string;
 
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  inviteCode?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ConsentDto)

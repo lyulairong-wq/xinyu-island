@@ -26,6 +26,20 @@ model User {
   tokenAccount TokenAccount?
   usageRecords TokenUsageRecord[]
   generationRequests GenerationRequest[]
+  redeemedInviteCodes InviteCode[] @relation("RedeemedInviteCode")
+}
+
+model InviteCode {
+  id            String   @id @default(cuid())
+  codeHash      String   @unique
+  expiresAt     DateTime
+  redeemedAt    DateTime?
+  revokedAt     DateTime?
+  redeemedByUserId String? @unique
+  createdAt     DateTime @default(now())
+  redeemedByUser User? @relation("RedeemedInviteCode", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt, redeemedAt, revokedAt])
 }
 
 model UserSession {
