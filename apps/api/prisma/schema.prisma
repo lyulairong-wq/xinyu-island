@@ -27,6 +27,7 @@ model User {
   usageRecords TokenUsageRecord[]
   generationRequests GenerationRequest[]
   redeemedInviteCodes InviteCode[] @relation("RedeemedInviteCode")
+  betaFeedback      BetaFeedback[]
 }
 
 model InviteCode {
@@ -40,6 +41,18 @@ model InviteCode {
   redeemedByUser User? @relation("RedeemedInviteCode", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
 
   @@index([expiresAt, redeemedAt, revokedAt])
+}
+
+model BetaFeedback {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  content   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([category, createdAt])
 }
 
 model UserSession {

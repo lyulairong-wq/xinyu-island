@@ -8,6 +8,7 @@ import { UsageModule } from "./usage/usage.module";
 import { PrismaService } from "./prisma/prisma.service";
 import { ModelGatewayModule } from "./model-gateway/model-gateway.module";
 import { SkillsModule } from "./skills/skills.module";
+import { FeedbackModule } from "./feedback/feedback.module";
 
 @Controller()
 class AppController {
@@ -34,7 +35,7 @@ class AppController {
 }
 
 @Module({
-  imports: [PrismaModule, AuthModule, ContactsModule, ChatModule, UsageModule, ModelGatewayModule, SkillsModule],
+  imports: [PrismaModule, AuthModule, ContactsModule, ChatModule, UsageModule, ModelGatewayModule, SkillsModule, FeedbackModule],
   controllers: [AppController]
 })
 export class AppModule {}
