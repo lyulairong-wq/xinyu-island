@@ -79,7 +79,13 @@ function createHarness(conversation: ConversationFixture = singleConversation())
     },
     message: { create: createMessage }
   };
-  const transaction = { message: { create: createMessage } };
+  const transaction = {
+    conversation: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; userId: string } }) =>
+        where.id === conversation.id && where.userId === conversation.userId ? conversation : null)
+    },
+    message: { create: createMessage }
+  };
   const reservation = {
     id: "reservation-1",
     userId: USER_ID,

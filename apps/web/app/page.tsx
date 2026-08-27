@@ -30,6 +30,13 @@ export default function HomePage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [message, setMessage] = useState("");
+  const [forceAnonymous, setForceAnonymous] = useState(false);
+
+  const handleAuthenticated = (authenticatedUser: AuthUser) => {
+    setForceAnonymous(false);
+    setMessage("");
+    setUser(authenticatedUser);
+  };
 
   const handleLogout = async () => {
     const storage = getBrowserTokenStorage();
@@ -44,13 +51,32 @@ export default function HomePage() {
     }
   };
 
-  if (user) return <AuthenticatedHome user={user} onLogout={handleLogout} />;
+  const handleAccountDeleted = async () => {
+    try {
+      getBrowserTokenStorage()?.clear();
+    } finally {
+      setForceAnonymous(true);
+      setUser(null);
+      setMessage("账号已注销，相关个人数据已删除。");
+    }
+  };
+
+  if (user) {
+    return <AuthenticatedHome user={user} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} />;
+  }
 
   return (
     <AuthGate
-      onAuthenticated={setUser}
+      forceAnonymous={forceAnonymous}
+      onAuthenticated={handleAuthenticated}
       loading={<div aria-live="polite" role="status" />}
-      authenticated={(restoredUser) => <AuthenticatedHome user={restoredUser} onLogout={handleLogout} />}
+      authenticated={(restoredUser) => (
+        <AuthenticatedHome
+          user={restoredUser}
+          onLogout={handleLogout}
+          onAccountDeleted={handleAccountDeleted}
+        />
+      )}
       anonymous={(
         <main className="entry-shell">
           <section className="brand-panel">
@@ -69,8 +95,8 @@ export default function HomePage() {
               <button className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setMessage(""); }}>注册</button>
             </div>
             {mode === "login"
-              ? <LoginForm onSuccess={setUser} onMessage={setMessage} />
-              : <RegisterForm onSuccess={setUser} onMessage={setMessage} />}
+              ? <LoginForm onSuccess={handleAuthenticated} onMessage={setMessage} />
+              : <RegisterForm onSuccess={handleAuthenticated} onMessage={setMessage} />}
             {message && <p className="form-message">{message}</p>}
           </section>
         </main>
@@ -159,7 +185,11 @@ function RegisterForm({ onSuccess, onMessage }: {
   );
 }
 
-function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
+  user: AuthUser;
+  onLogout: () => Promise<void>;
+  onAccountDeleted: () => Promise<void>;
+}) {
   const [activeNav, setActiveNav] = useState<AppDestination>("chat");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [history, setHistory] = useState<ConversationSummary[]>([]);
@@ -231,7 +261,14 @@ function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () =>
     : activeNav === "apps"
       ? <AppsHome />
       : activeNav === "me"
-        ? <MeHome user={user} contacts={contacts} onLogout={onLogout} />
+        ? (
+          <MeHome
+            user={user}
+            contacts={contacts}
+            onLogout={onLogout}
+            onAccountDeleted={onAccountDeleted}
+          />
+        )
         : (
           <ChatShell
             conversations={history}

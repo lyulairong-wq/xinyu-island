@@ -11,6 +11,7 @@ type AuthGateProps = {
   loadUser?: (token: string) => Promise<AuthUser>;
   storage?: Pick<TokenStorage, "read" | "clear"> | null;
   onAuthenticated?: (user: AuthUser) => void;
+  forceAnonymous?: boolean;
 };
 
 type AuthState =
@@ -25,7 +26,8 @@ export function AuthGate({
   loading = <div aria-live="polite" role="status" />,
   loadUser = getCurrentUser,
   storage: injectedStorage,
-  onAuthenticated
+  onAuthenticated,
+  forceAnonymous = false
 }: AuthGateProps) {
   const browserStorage = useMemo(() => getBrowserTokenStorage(), []);
   const storage = injectedStorage ?? browserStorage;
@@ -33,6 +35,11 @@ export function AuthGate({
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (forceAnonymous) {
+      setState({ kind: "anonymous" });
+      return;
+    }
+
     const token = storage?.read();
     if (!token) {
       setState({ kind: "anonymous" });
@@ -59,7 +66,7 @@ export function AuthGate({
     return () => {
       active = false;
     };
-  }, [attempt, loadUser, onAuthenticated, storage]);
+  }, [attempt, forceAnonymous, loadUser, onAuthenticated, storage]);
 
   if (state.kind === "loading") return loading;
   if (state.kind === "anonymous") return anonymous;

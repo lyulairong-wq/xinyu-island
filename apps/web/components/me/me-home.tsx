@@ -6,18 +6,29 @@ import type { AuthUser } from "../../lib/auth-api";
 import type { Contact } from "../../lib/contacts-api";
 import { listDeletedContactRecords, updateDefaultMemory, type DeletedContactRecords } from "../../lib/contacts-api";
 import { getUsageSummary, type UsageSummary } from "../../lib/usage-api";
+import { AccountDeletionPanel } from "./account-deletion-panel";
+import { ConsentDocuments } from "./consent-documents";
 import { MemoryManager } from "./memory-manager";
 
 type MeHomeProps = {
   user: AuthUser;
   contacts: Contact[];
-  onLogout: () => Promise<void>;
+  onLogout(): Promise<void>;
+  onAccountDeleted(): Promise<void>;
   loadUsage?: () => Promise<UsageSummary>;
   saveDefaultMemory?: (enabled: boolean) => Promise<{ defaultMemoryEnabled: boolean }>;
   loadDeletedRecords?: () => Promise<DeletedContactRecords>;
 };
 
-export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary, saveDefaultMemory = updateDefaultMemory, loadDeletedRecords = listDeletedContactRecords }: MeHomeProps) {
+export function MeHome({
+  user,
+  contacts,
+  onLogout,
+  onAccountDeleted,
+  loadUsage = getUsageSummary,
+  saveDefaultMemory = updateDefaultMemory,
+  loadDeletedRecords = listDeletedContactRecords
+}: MeHomeProps) {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [notice, setNotice] = useState("");
   const [defaultMemoryEnabled, setDefaultMemoryEnabled] = useState(user.defaultMemoryEnabled);
@@ -88,10 +99,9 @@ export function MeHome({ user, contacts, onLogout, loadUsage = getUsageSummary, 
         </div>}
       </section>
 
-      <section className="me-section" aria-labelledby="agreement-heading">
-        <h3 id="agreement-heading">用户协议</h3>
-        <p>用户协议与娱乐使用提示可持续查看；普通聊天中不重复弹出。</p>
-      </section>
+      <ConsentDocuments />
+
+      <AccountDeletionPanel onDeleted={onAccountDeleted} />
 
       <section className="me-section" aria-labelledby="settings-heading">
         <h3 id="settings-heading">设置</h3>

@@ -1,7 +1,11 @@
-import type { AgeBand } from "@xinyu/contracts";
+import {
+  CONSENT_DOCUMENT_TYPES,
+  CURRENT_CONSENT_DOCUMENT_VERSION,
+  type AgeBand
+} from "@xinyu/contracts";
 
-export const REQUIRED_CONSENT_TYPES = ["terms", "privacy", "entertainment_notice"] as const;
-export const CURRENT_CONSENT_DOCUMENT_VERSION = "1.0";
+export const REQUIRED_CONSENT_TYPES = CONSENT_DOCUMENT_TYPES;
+export { CURRENT_CONSENT_DOCUMENT_VERSION };
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();

@@ -100,3 +100,17 @@ Web“我的”
 - API、Web、并发安全测试和浏览器 E2E 全部通过。
 - 使用真实 PostgreSQL 验证删除级联及同邮箱新注册。
 - `npm.cmd run verify`、迁移状态检查通过，并提交 M4 验证记录。
+
+## M4 验证记录
+
+- 验证基线提交：`6810289`（Task 5 E2E 用例运行时的 M4 分支 HEAD）。
+- 命令 `npm.cmd run db:generate`：通过，Prisma Client v6.19.3 已生成。
+- 迁移检查：在显式创建的临时 PostgreSQL `xinyu_e2e` 数据库执行 `npx.cmd prisma migrate status --schema apps/api/prisma/schema.prisma`，输出为 `Database schema is up to date!`；共识别 10 个迁移，未连接开发数据库。
+- 命令 `npm.cmd run test:e2e -- e2e/m4-account-privacy.spec.ts`：通过，Playwright `1 passed (2.7s)`；启动器为本次运行创建独立 `xinyu_e2e` PostgreSQL 容器并在结束时清理。
+- 浏览器先以错误密码提交注销，账户记录仍为 1 且旧 JWT 请求 `GET /api/v1/me` 返回 200；随后以正确密码注销。
+- 注销前已为原用户创建并确认各 1 条私有联系人、会话、消息、联系人记忆、Token 账户、生成请求与用量记录；注销后原用户、会话、同意记录、私有联系人、会话、消息、联系人记忆、Token 账户、生成请求和用量记录的定向计数均为 0，旧 JWT 请求 `GET /api/v1/me` 返回 401。
+- 同一邮箱可立即重新注册；新用户 ID 不同，且其会话、联系人记忆、生成请求和用量记录计数均为 0。
+- M4 E2E 用例仅接受启动器默认创建的 `postgresql://xinyu_e2e:xinyu_e2e@127.0.0.1:15433/xinyu_e2e?schema=public`；其他地址、端口、凭据或数据库名在执行任何删除前即拒绝运行。
+- 最终门禁验证基线提交：`ef4ff25`。`npm.cmd run verify` 通过：API 163、Web 47、AI 7、Config 13、Contracts 1、Safety 305 项测试均通过，且所有工作区 TypeScript 检查与生产构建通过。
+- 最终浏览器验收：`npm.cmd run test:e2e -- e2e/m4-account-privacy.spec.ts` 通过，Playwright `1 passed (2.7s)`；运行器建立并清理本机回环的一次性 PostgreSQL 容器。
+- 迁移门禁：在另一独立的本机临时 PostgreSQL（`127.0.0.1:15434`）执行 `prisma migrate deploy` 后，再执行 `npx.cmd prisma migrate status --schema apps/api/prisma/schema.prisma`，结果为 `Database schema is up to date!`；临时容器已停止并自动移除。

@@ -3,6 +3,7 @@ import { AuthService } from "./auth.service";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import type { AuthenticatedUser } from "./auth.types";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 
@@ -42,5 +43,18 @@ export class MeController {
   @Get()
   profile(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.getProfile(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("consents")
+  consents(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.getConsents(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("account-deletion")
+  async deleteAccount(@CurrentUser() user: AuthenticatedUser, @Body() input: DeleteAccountDto) {
+    await this.auth.deleteAccount(user.id, input.password);
+    return { success: true };
   }
 }
