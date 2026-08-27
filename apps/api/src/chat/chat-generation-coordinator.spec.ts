@@ -61,6 +61,7 @@ function input(overrides: Partial<ChatGenerationInput> = {}): ChatGenerationInpu
 function createHarness() {
   let userSequence = 0;
   let assistantSequence = 0;
+  const tokenFinalizations: unknown[] = [];
   const reservation = {
     id: "reservation-1",
     userId: "user-1",
@@ -119,7 +120,11 @@ function createHarness() {
     _userId: string,
     _actual: { conversationId: string; requestId: string },
     persist: (tx: typeof transaction) => Promise<{ messageId: string; provider: string; inputTokens: number; outputTokens: number; result: unknown }>
-  ) => (await persist(transaction)).result);
+  ) => {
+    const finalized = await persist(transaction);
+    tokenFinalizations.push(finalized);
+    return finalized.result;
+  });
   const gateway = {
     generate: vi.fn(async () => ({
       text: "林屿回复",
@@ -136,7 +141,7 @@ function createHarness() {
     new GenerationPolicy()
   );
 
-  return { coordinator, gateway, prisma, reservation, transaction, usage };
+  return { coordinator, gateway, prisma, reservation, tokenFinalizations, transaction, usage };
 }
 
 function expectBadRequestCode(promise: Promise<unknown>, code: string) {
@@ -283,7 +288,7 @@ describe("ChatGenerationCoordinator", () => {
   });
 
   it("rolls back Token settlement when the conversation is unavailable before its first write", async () => {
-    const { coordinator, transaction, usage } = createHarness();
+    const { coordinator, tokenFinalizations, transaction, usage } = createHarness();
 
     transaction.conversation.findFirst.mockResolvedValueOnce(null);
 
@@ -291,6 +296,7 @@ describe("ChatGenerationCoordinator", () => {
 
     expect(transaction.message.create).not.toHaveBeenCalled();
     expect(usage.settleSimulatedTokenWithMessages).toHaveBeenCalledTimes(1);
+    expect(tokenFinalizations).toEqual([]);
   });
 
   it("persists skill card metadata only after a safe output passes policy", async () => {

@@ -13,8 +13,14 @@ describe("ChatGenerationCoordinator Mock fallback", () => {
       ...data,
       createdAt: new Date()
     }));
-    const prisma = { message: { create: createMessage } };
-    const transaction = { message: { create: createMessage } };
+    const prisma = {
+      conversation: { findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "conversation-1" })) },
+      message: { create: createMessage }
+    };
+    const transaction = {
+      conversation: { findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "conversation-1" })) },
+      message: { create: createMessage }
+    };
     const reservation = {
       id: "reservation-1",
       userId: "user-1",
