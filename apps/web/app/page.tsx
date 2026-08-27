@@ -44,13 +44,27 @@ export default function HomePage() {
     }
   };
 
-  if (user) return <AuthenticatedHome user={user} onLogout={handleLogout} />;
+  const handleAccountDeleted = async () => {
+    getBrowserTokenStorage()?.clear();
+    setUser(null);
+    setMessage("账号已注销，相关个人数据已删除。");
+  };
+
+  if (user) {
+    return <AuthenticatedHome user={user} onLogout={handleLogout} onAccountDeleted={handleAccountDeleted} />;
+  }
 
   return (
     <AuthGate
       onAuthenticated={setUser}
       loading={<div aria-live="polite" role="status" />}
-      authenticated={(restoredUser) => <AuthenticatedHome user={restoredUser} onLogout={handleLogout} />}
+      authenticated={(restoredUser) => (
+        <AuthenticatedHome
+          user={restoredUser}
+          onLogout={handleLogout}
+          onAccountDeleted={handleAccountDeleted}
+        />
+      )}
       anonymous={(
         <main className="entry-shell">
           <section className="brand-panel">
@@ -159,7 +173,11 @@ function RegisterForm({ onSuccess, onMessage }: {
   );
 }
 
-function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
+  user: AuthUser;
+  onLogout: () => Promise<void>;
+  onAccountDeleted: () => Promise<void>;
+}) {
   const [activeNav, setActiveNav] = useState<AppDestination>("chat");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [history, setHistory] = useState<ConversationSummary[]>([]);
@@ -231,7 +249,14 @@ function AuthenticatedHome({ user, onLogout }: { user: AuthUser; onLogout: () =>
     : activeNav === "apps"
       ? <AppsHome />
       : activeNav === "me"
-        ? <MeHome user={user} contacts={contacts} onLogout={onLogout} />
+        ? (
+          <MeHome
+            user={user}
+            contacts={contacts}
+            onLogout={onLogout}
+            onAccountDeleted={onAccountDeleted}
+          />
+        )
         : (
           <ChatShell
             conversations={history}
