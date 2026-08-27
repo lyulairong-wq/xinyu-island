@@ -14,6 +14,11 @@ const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const localChrome = process.platform === "win32"
   ? resolve(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe")
   : "";
+const requiresRealModel = process.env.E2E_REQUIRE_REAL_MODEL === "1";
+
+if (requiresRealModel && (!process.env.FREE_MODEL_BASE_URL?.trim() || !process.env.FREE_MODEL_NAME?.trim())) {
+  throw new Error("E2E_REQUIRE_REAL_MODEL=1 requires FREE_MODEL_BASE_URL and FREE_MODEL_NAME");
+}
 
 function resolveWorkspaceTool(parts) {
   let candidate = root;
@@ -39,8 +44,13 @@ const environment = {
   JWT_SECRET: "xinyu-e2e-only-secret-that-is-long-enough",
   WEB_ORIGIN: `http://127.0.0.1:${webPort}`,
   NEXT_PUBLIC_API_URL: `http://127.0.0.1:${apiPort}/api/v1`,
-  FREE_MODEL_BASE_URL: "",
-  FREE_MODEL_NAME: "",
+  // Default E2E must prove the no-provider Mock fallback. The dedicated real-model
+  // command deliberately preserves the caller's model configuration instead.
+  FREE_MODEL_BASE_URL: requiresRealModel ? process.env.FREE_MODEL_BASE_URL : "",
+  FREE_MODEL_NAME: requiresRealModel ? process.env.FREE_MODEL_NAME : "",
+  ...(requiresRealModel && process.env.FREE_MODEL_API_KEY
+    ? { FREE_MODEL_API_KEY: process.env.FREE_MODEL_API_KEY }
+    : {}),
   ...(existsSync(localChrome) ? { PLAYWRIGHT_CHROME_EXECUTABLE: localChrome } : {})
 };
 
