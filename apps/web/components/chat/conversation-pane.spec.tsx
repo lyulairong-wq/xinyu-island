@@ -79,4 +79,31 @@ describe("ConversationPane", () => {
     expect(within(bubbles[0]!).getAllByRole("button").map((button) => button.textContent)).toEqual(["复制", "引用"]);
     expect(within(bubbles[1]!).getAllByRole("button").map((button) => button.textContent)).toEqual(["复制", "引用", "重新生成", "以此继续聊"]);
   });
+
+  it("does not expose the token mode switch in closed beta", () => {
+    render(
+      <ConversationPane
+        title="岚"
+        kind="single"
+        contact={members[0]!}
+        members={[members[0]!]}
+        messages={[]}
+        draft=""
+        mode="free"
+        memoryEnabled={false}
+        tokenModeEnabled={false}
+        onDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onModeChange={vi.fn()}
+        onQuote={vi.fn()}
+        onRegenerate={vi.fn()}
+        onContinue={vi.fn()}
+        onToggleMemory={vi.fn()}
+        onBack={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "免费" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Token" })).not.toBeInTheDocument();
+  });
 });

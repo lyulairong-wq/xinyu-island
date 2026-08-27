@@ -47,6 +47,7 @@ type ChatShellProps = {
   }>;
   remove?: (conversationId: string) => Promise<{ success: true }>;
   startSkill?: (conversationId: string, input: Parameters<typeof startSkillSession>[1]) => Promise<SkillSessionResult>;
+  tokenModeEnabled?: boolean;
 };
 
 export function ChatShell({
@@ -64,7 +65,8 @@ export function ChatShell({
   createDiscussionGroup = createGroupRequest,
   update = updateConversationRequest,
   remove = deleteConversationRequest,
-  startSkill = startSkillSession
+  startSkill = startSkillSession,
+  tokenModeEnabled = true
 }: ChatShellProps) {
   const [activeConversationId, setActiveConversationId] = useState(initialConversationId ?? "");
   const [details, setDetails] = useState<Record<string, ConversationDetail>>({});
@@ -84,6 +86,10 @@ export function ChatShell({
   useEffect(() => {
     setNotice(initialNotice);
   }, [initialNotice]);
+
+  useEffect(() => {
+    if (!tokenModeEnabled && mode === "token") changeMode("free");
+  }, [mode, tokenModeEnabled]);
 
   useEffect(() => {
     if (!activeConversationId || details[activeConversationId]) return;
@@ -341,6 +347,7 @@ export function ChatShell({
           skills={skillOptions}
           onStartSkill={(input) => void performSkill(input)}
           onRememberSkill={() => void rememberSkill()}
+          tokenModeEnabled={tokenModeEnabled}
         />
       ) : (
         <section className="chat-empty-pane">

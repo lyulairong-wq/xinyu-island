@@ -64,6 +64,19 @@ export class AuthService {
     return this.createSession(user.id, input.deviceLabel);
   }
 
+  betaInfo() {
+    const beta = loadBetaConfig(process.env);
+    return {
+      registrationEnabled: beta.registrationEnabled,
+      requireInviteCode: beta.requireInviteCode,
+      requireAdult: beta.requireAdult,
+      generationEnabled: beta.generationEnabled,
+      tokenModeEnabled: beta.tokenModeEnabled,
+      appsEnabled: beta.appsEnabled,
+      feedbackEnabled: beta.feedbackEnabled
+    };
+  }
+
   async logout(userId: string, sessionId: string): Promise<void> {
     await this.prisma.userSession.updateMany({ where: { id: sessionId, userId }, data: { revokedAt: new Date() } });
   }

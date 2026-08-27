@@ -32,6 +32,7 @@ type ConversationPaneProps = {
   skills?: readonly SkillLaunchOption[];
   onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
   onRememberSkill?: (message: Message) => void | Promise<void>;
+  tokenModeEnabled?: boolean;
 };
 
 export function ConversationPane({
@@ -57,7 +58,8 @@ export function ConversationPane({
   onBack,
   skills = [],
   onStartSkill,
-  onRememberSkill
+  onRememberSkill,
+  tokenModeEnabled = true
 }: ConversationPaneProps) {
   const contentById = new Map(messages.map((message) => [message.id, message.content]));
   let assistantOrder = 0;
@@ -119,6 +121,7 @@ export function ConversationPane({
         contactName={kind === "group" ? title : contact.name}
         skills={skills}
         onStartSkill={onStartSkill}
+        tokenModeEnabled={tokenModeEnabled}
       />
     </section>
   );

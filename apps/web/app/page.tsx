@@ -15,7 +15,7 @@ import { ContactsHome } from "../components/contacts/contacts-home";
 import { MeHome } from "../components/me/me-home";
 import { AppNavigation, type AppDestination } from "../components/navigation/app-navigation";
 import { operationalNotice } from "../lib/api-client";
-import { login, logout, register, type AuthUser } from "../lib/auth-api";
+import { getBetaExperience, login, logout, register, type AuthUser, type BetaExperience } from "../lib/auth-api";
 import { getBrowserTokenStorage } from "../lib/auth-session";
 import {
   createConversation,
@@ -31,6 +31,23 @@ export default function HomePage() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [message, setMessage] = useState("");
   const [forceAnonymous, setForceAnonymous] = useState(false);
+  const [beta, setBeta] = useState<BetaExperience>({
+    registrationEnabled: true,
+    requireInviteCode: true,
+    requireAdult: true,
+    generationEnabled: true,
+    tokenModeEnabled: false,
+    appsEnabled: false,
+    feedbackEnabled: false
+  });
+
+  useEffect(() => {
+    let active = true;
+    void getBetaExperience().then((value) => {
+      if (active) setBeta(value);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   const handleAuthenticated = (authenticatedUser: AuthUser) => {
     setForceAnonymous(false);
@@ -96,7 +113,7 @@ export default function HomePage() {
             </div>
             {mode === "login"
               ? <LoginForm onSuccess={handleAuthenticated} onMessage={setMessage} />
-              : <RegisterForm onSuccess={handleAuthenticated} onMessage={setMessage} />}
+              : <RegisterForm onSuccess={handleAuthenticated} onMessage={setMessage} beta={beta} />}
             {message && <p className="form-message">{message}</p>}
           </section>
         </main>
@@ -135,9 +152,10 @@ function LoginForm({ onSuccess, onMessage }: {
   );
 }
 
-function RegisterForm({ onSuccess, onMessage }: {
+function RegisterForm({ onSuccess, onMessage, beta }: {
   onSuccess: (user: AuthUser) => void;
   onMessage: (message: string) => void;
+  beta: BetaExperience;
 }) {
   const [consents, setConsents] = useState<ConsentSelection>(EMPTY_CONSENT_SELECTION);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -155,7 +173,8 @@ function RegisterForm({ onSuccess, onMessage }: {
         nickname: String(form.get("nickname")),
         ageBand: String(form.get("ageBand")),
         deviceLabel: "web",
-        consents: buildConsentPayload(consents)
+        consents: buildConsentPayload(consents),
+        ...(beta.requireInviteCode ? { inviteCode: String(form.get("inviteCode")) } : {})
       });
       getBrowserTokenStorage()?.write(session.accessToken);
       onSuccess(session.user);
@@ -171,7 +190,7 @@ function RegisterForm({ onSuccess, onMessage }: {
       <label>密码<input name="password" type="password" placeholder="至少 8 位" minLength={8} required /></label>
       <label>
         年龄段
-        <select name="ageBand" defaultValue="undisclosed">
+        <select name="ageBand" defaultValue={beta.requireAdult ? "18_plus" : "undisclosed"}>
           <option value="under_13">13 岁以下</option>
           <option value="13_15">13–15 岁</option>
           <option value="16_17">16–17 岁</option>
@@ -179,6 +198,7 @@ function RegisterForm({ onSuccess, onMessage }: {
           <option value="undisclosed">暂不透露</option>
         </select>
       </label>
+      {beta.requireInviteCode && <label>邀请码<input name="inviteCode" placeholder="XY-..." required /></label>}
       <ConsentChecklist value={consents} onChange={setConsents} />
       <button className="primary-button" type="submit" disabled={!isConsentSelectionComplete(consents)}>创建心屿账号</button>
     </form>
@@ -196,6 +216,23 @@ function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
   const [requestedConversationId, setRequestedConversationId] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("free");
   const [notice, setNotice] = useState("");
+  const [beta, setBeta] = useState<BetaExperience>({
+    registrationEnabled: true,
+    requireInviteCode: true,
+    requireAdult: true,
+    generationEnabled: true,
+    tokenModeEnabled: false,
+    appsEnabled: false,
+    feedbackEnabled: false
+  });
+
+  useEffect(() => {
+    let active = true;
+    void getBetaExperience().then((value) => {
+      if (active) setBeta(value);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -258,7 +295,7 @@ function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
         onContactsChange={refreshContacts}
       />
     )
-    : activeNav === "apps"
+    : activeNav === "apps" && beta.appsEnabled
       ? <AppsHome />
       : activeNav === "me"
         ? (
@@ -267,6 +304,7 @@ function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
             contacts={contacts}
             onLogout={onLogout}
             onAccountDeleted={onAccountDeleted}
+            feedbackEnabled={beta.feedbackEnabled}
           />
         )
         : (
@@ -279,6 +317,7 @@ function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
             generationMode={generationMode}
             onGenerationModeChange={setGenerationMode}
             onConversationsChange={refreshHistory}
+            tokenModeEnabled={beta.tokenModeEnabled}
           />
         );
 
@@ -297,6 +336,7 @@ function AuthenticatedHome({ user, onLogout, onAccountDeleted }: {
         onNavigate={setActiveNav}
         profile={user}
         onLogout={() => { void onLogout(); }}
+        appsEnabled={beta.appsEnabled}
       />
       <section className="app-main">
         <header className="app-header">

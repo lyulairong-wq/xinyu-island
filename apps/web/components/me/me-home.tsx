@@ -9,6 +9,7 @@ import { getUsageSummary, type UsageSummary } from "../../lib/usage-api";
 import { AccountDeletionPanel } from "./account-deletion-panel";
 import { ConsentDocuments } from "./consent-documents";
 import { MemoryManager } from "./memory-manager";
+import { BetaFeedbackPanel } from "./beta-feedback-panel";
 
 type MeHomeProps = {
   user: AuthUser;
@@ -18,6 +19,7 @@ type MeHomeProps = {
   loadUsage?: () => Promise<UsageSummary>;
   saveDefaultMemory?: (enabled: boolean) => Promise<{ defaultMemoryEnabled: boolean }>;
   loadDeletedRecords?: () => Promise<DeletedContactRecords>;
+  feedbackEnabled?: boolean;
 };
 
 export function MeHome({
@@ -27,7 +29,8 @@ export function MeHome({
   onAccountDeleted,
   loadUsage = getUsageSummary,
   saveDefaultMemory = updateDefaultMemory,
-  loadDeletedRecords = listDeletedContactRecords
+  loadDeletedRecords = listDeletedContactRecords,
+  feedbackEnabled = false
 }: MeHomeProps) {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [notice, setNotice] = useState("");
@@ -100,6 +103,8 @@ export function MeHome({
       </section>
 
       <ConsentDocuments />
+
+      {feedbackEnabled && <BetaFeedbackPanel />}
 
       <AccountDeletionPanel onDeleted={onAccountDeleted} />
 

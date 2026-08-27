@@ -28,4 +28,11 @@ describe("AppNavigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "我的" }));
     expect(onNavigate).toHaveBeenCalledWith("me");
   });
+
+  it("hides deferred apps from the closed-beta navigation", () => {
+    render(<AppNavigation onNavigate={vi.fn()} appsEnabled={false} />);
+
+    expect(screen.queryByRole("button", { name: "应用" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "聊天" })).toBeVisible();
+  });
 });

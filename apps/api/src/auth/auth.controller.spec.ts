@@ -2,7 +2,7 @@ import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/
 import { RequestMethod } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { AuthService } from "./auth.service";
-import { MeController } from "./auth.controller";
+import { AuthController, MeController } from "./auth.controller";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 
 describe("MeController", () => {
@@ -33,5 +33,17 @@ describe("MeController", () => {
     expect(Reflect.getMetadata(PATH_METADATA, MeController.prototype.deleteAccount)).toBe("account-deletion");
     expect(Reflect.getMetadata(METHOD_METADATA, MeController.prototype.deleteAccount)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata(GUARDS_METADATA, MeController.prototype.deleteAccount)).toContain(JwtAuthGuard);
+  });
+});
+
+describe("AuthController", () => {
+  it("makes beta experience switches available without authentication", () => {
+    const auth = { betaInfo: vi.fn(() => ({ requireInviteCode: true })) };
+    const controller = new AuthController(auth as unknown as AuthService);
+
+    expect(controller.betaInfo()).toEqual({ requireInviteCode: true });
+    expect(auth.betaInfo).toHaveBeenCalledTimes(1);
+    expect(Reflect.getMetadata(PATH_METADATA, AuthController.prototype.betaInfo)).toBe("beta-info");
+    expect(Reflect.getMetadata(METHOD_METADATA, AuthController.prototype.betaInfo)).toBe(RequestMethod.GET);
   });
 });

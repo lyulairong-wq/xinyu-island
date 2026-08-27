@@ -9,6 +9,7 @@ type AppNavigationProps = {
   onNavigate: (destination: AppDestination) => void;
   profile?: { nickname: string };
   onLogout?: () => void;
+  appsEnabled?: boolean;
 };
 
 const DESTINATIONS: ReadonlyArray<{ id: AppDestination; label: string; icon: string }> = [
@@ -22,7 +23,8 @@ export function AppNavigation({
   active = "chat",
   onNavigate,
   profile,
-  onLogout
+  onLogout,
+  appsEnabled = true
 }: AppNavigationProps) {
   return (
     <aside className="sidebar app-navigation">
@@ -31,7 +33,7 @@ export function AppNavigation({
         <span>心屿</span>
       </div>
       <nav aria-label="主导航">
-        {DESTINATIONS.map((destination) => (
+        {DESTINATIONS.filter((destination) => appsEnabled || destination.id !== "apps").map((destination) => (
           <button
             className={`nav-item ${active === destination.id ? "selected" : ""}`}
             type="button"

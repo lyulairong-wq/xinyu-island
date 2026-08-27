@@ -27,6 +27,17 @@ export type RegisterInput = LoginInput & {
   nickname: string;
   ageBand: string;
   consents: Array<{ type: string; version: string }>;
+  inviteCode?: string;
+};
+
+export type BetaExperience = {
+  registrationEnabled: boolean;
+  requireInviteCode: boolean;
+  requireAdult: boolean;
+  generationEnabled: boolean;
+  tokenModeEnabled: boolean;
+  appsEnabled: boolean;
+  feedbackEnabled: boolean;
 };
 
 export class ApiError extends Error {
@@ -50,6 +61,10 @@ export async function login(input: LoginInput): Promise<AuthSession> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
   });
+}
+
+export async function getBetaExperience(): Promise<BetaExperience> {
+  return request<BetaExperience>("/auth/beta-info", { method: "GET" });
 }
 
 export async function getCurrentUser(token: string): Promise<AuthUser> {

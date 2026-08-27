@@ -1,7 +1,7 @@
 import { JwtService } from "@nestjs/jwt";
 import { CURRENT_CONSENT_DOCUMENT_VERSION } from "@xinyu/contracts";
 import * as bcrypt from "bcrypt";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "./auth.service";
 
@@ -62,6 +62,10 @@ describe("AuthService", () => {
     vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("rejects registration before persisting when a required consent is missing", async () => {
     await expect(service.register({ ...baseInput, consents: [{ type: "terms", version: "1.0" }] })).rejects.toThrow("必须同意");
 
@@ -110,6 +114,22 @@ describe("AuthService", () => {
         expect.objectContaining({ documentVersion: "1.0" })
       ])
     });
+  });
+
+  it("exposes only non-sensitive beta experience switches to the web client", () => {
+    vi.stubEnv("BETA_REQUIRE_INVITE_CODE", "true");
+    vi.stubEnv("BETA_REQUIRE_ADULT", "true");
+    vi.stubEnv("BETA_TOKEN_MODE_ENABLED", "false");
+    vi.stubEnv("BETA_APPS_ENABLED", "false");
+    vi.stubEnv("BETA_FEEDBACK_ENABLED", "true");
+
+    expect(service.betaInfo()).toEqual(expect.objectContaining({
+      requireInviteCode: true,
+      requireAdult: true,
+      tokenModeEnabled: false,
+      appsEnabled: false,
+      feedbackEnabled: true
+    }));
   });
 
   it("requires an unredeemed invite code only when beta invite enforcement is enabled", async () => {

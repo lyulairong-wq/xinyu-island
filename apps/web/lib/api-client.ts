@@ -12,6 +12,14 @@ const CODE_NOTICES: Readonly<Record<string, string>> = {
   GENERATION_SAFETY_REJECTED: "这个话题无法使用趣味技能，请回到普通聊天",
   GENERATION_OUTPUT_REJECTED: "这次回复未通过安全检查，请换个说法重试",
   MODEL_UNAVAILABLE: "AI 服务暂时不可用，请稍后重试",
+  BETA_GENERATION_PAUSED: "封测生成服务暂时维护中，你仍可查看和管理已有内容。",
+  BETA_PROJECT_QUOTA_EXCEEDED: "本轮封测的体验额度已用尽，生成服务将恢复后再开放。",
+  BETA_TOKEN_MODE_DISABLED: "封测期间仅提供免费体验模式。",
+  BETA_REGISTRATION_PAUSED: "当前封测暂不开放新的注册。",
+  BETA_ADULT_ONLY: "本次封测仅面向 18 周岁及以上用户。",
+  BETA_INVITE_REQUIRED: "请输入有效的邀请码。",
+  BETA_INVITE_INVALID: "邀请码无效、已使用或已过期。",
+  BETA_FEEDBACK_DISABLED: "反馈入口暂未开放，请稍后再试。",
   CONTACT_SKILLS_INVALID: "联系人技能配置无效，请重新选择",
   OFFICIAL_CONTACT_IMMUTABLE: "官方 AI 的配置不能修改"
 };

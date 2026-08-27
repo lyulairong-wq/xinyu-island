@@ -11,6 +11,11 @@ import { RegisterDto } from "./dto/register.dto";
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Get("beta-info")
+  betaInfo() {
+    return this.auth.betaInfo();
+  }
+
   @Post("register")
   register(@Body() input: RegisterDto) {
     return this.auth.register(input);

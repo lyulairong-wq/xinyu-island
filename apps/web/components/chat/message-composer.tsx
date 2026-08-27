@@ -18,6 +18,7 @@ type MessageComposerProps = {
   contactName: string;
   skills?: readonly SkillLaunchOption[];
   onStartSkill?: (input: StartSkillSessionInput) => void | Promise<void>;
+  tokenModeEnabled?: boolean;
 };
 
 export function MessageComposer({
@@ -32,7 +33,8 @@ export function MessageComposer({
   notice,
   contactName,
   skills = [],
-  onStartSkill
+  onStartSkill,
+  tokenModeEnabled = true
 }: MessageComposerProps) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -74,7 +76,7 @@ export function MessageComposer({
       <div className="composer-footer">
         <div className="mode-switch" aria-label="生成模式">
           <button type="button" className={mode === "free" ? "active" : ""} aria-pressed={mode === "free"} onClick={() => onModeChange("free")}>免费</button>
-          <button type="button" className={mode === "token" ? "active" : ""} aria-pressed={mode === "token"} onClick={() => onModeChange("token")}>Token</button>
+          {tokenModeEnabled && <button type="button" className={mode === "token" ? "active" : ""} aria-pressed={mode === "token"} onClick={() => onModeChange("token")}>Token</button>}
         </div>
         <span>{mode === "free" ? "使用免费额度" : "Token 模拟模式"}</span>
       </div>
