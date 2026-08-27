@@ -48,11 +48,11 @@ class Semaphore {
 
 @Injectable()
 export class ModelGatewayService {
-  private readonly providers: Required<Pick<ModelGatewayProviders, "mock">> & Omit<ModelGatewayProviders, "mock">;
+  private readonly providers: ModelGatewayProviders;
   private readonly semaphore = new Semaphore(MAX_CONCURRENT_MODEL_GENERATIONS);
 
-  constructor(providers: ModelGatewayProviders = {}) {
-    this.providers = { ...providers, mock: providers.mock ?? new MockAiProvider() };
+  constructor(providers: ModelGatewayProviders = {}, allowMockFallback = true) {
+    this.providers = { ...providers, ...(allowMockFallback ? { mock: providers.mock ?? new MockAiProvider() } : {}) };
   }
 
   static fromConfig(config: AppConfig): ModelGatewayService {
@@ -61,7 +61,7 @@ export class ModelGatewayService {
       ? new OpenAiCompatibleProvider(baseUrl, model, { apiKey, timeoutMs })
       : undefined;
 
-    return new ModelGatewayService({ local });
+    return new ModelGatewayService({ local }, config.beta.allowMockFallback);
   }
 
   async generate(input: GenerationRequest): Promise<ModelGatewayResult> {

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { loadConfig } from "@xinyu/config";
 import { evaluateMessage } from "@xinyu/safety";
 import { ContactsService } from "../contacts/contacts.service";
@@ -118,6 +118,9 @@ export class ChatService {
   }
 
   async sendMessage(userId: string, conversationId: string, input: SendMessageDto) {
+    const runtimeConfig = loadConfig(process.env);
+    if (!runtimeConfig.beta.generationEnabled) throw new ForbiddenException({ code: "BETA_GENERATION_PAUSED" });
+    if (!runtimeConfig.beta.tokenModeEnabled && input.mode === "token") throw new ForbiddenException({ code: "BETA_TOKEN_MODE_DISABLED" });
     const conversation = await this.getOwnedConversation(userId, conversationId) as MessageConversation;
     const quotedMessage = input.quoteMessageId
       ? await this.prisma.message.findFirst({ where: { id: input.quoteMessageId, conversationId }, select: { id: true, content: true } })
@@ -133,7 +136,7 @@ export class ChatService {
       conversation.memoryEnabled,
       contactId
     )));
-    const modelConfig = loadConfig(process.env).freeModel;
+    const modelConfig = runtimeConfig.freeModel;
 
     return this.generationCoordinator.generate({
       userId,

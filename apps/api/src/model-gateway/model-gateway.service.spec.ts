@@ -131,4 +131,9 @@ describe("ModelGatewayService", () => {
     expect(results).toHaveLength(3);
     expect(peakActive).toBe(2);
   });
+
+  it("does not silently create a Mock fallback when beta disables it", async () => {
+    const service = new ModelGatewayService({ local: provider({ available: false }) }, false);
+    await expect(service.generate(request)).rejects.toMatchObject({ status: 503 });
+  });
 });
