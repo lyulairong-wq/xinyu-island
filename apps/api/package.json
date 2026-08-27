@@ -11,7 +11,8 @@
     "pretest": "npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety",
     "test": "vitest run --passWithNoTests --exclude dist/**",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "beta:invites": "tsx scripts/generate-invites.ts"
   },
   "dependencies": {
     "@nestjs/jwt": "11.0.1",
