@@ -22,10 +22,16 @@ export function AccountDeletionPanel({ onDeleted }: AccountDeletionPanelProps) {
     setNotice("");
     try {
       await deleteAccount({ password, confirmed: true });
-      await onDeleted();
     } catch (error) {
       setNotice(operationalNotice(error, "暂时无法注销账号，请稍后重试"));
       setSubmitting(false);
+      return;
+    }
+
+    try {
+      await onDeleted();
+    } catch {
+      setNotice("账号已注销，正在返回登录页");
     }
   };
 

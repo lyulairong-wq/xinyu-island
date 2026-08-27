@@ -68,4 +68,18 @@ describe("AccountDeletionPanel", () => {
     expect(screen.getByRole("button", { name: "立即注销账号" })).toBeVisible();
     expect(onDeleted).not.toHaveBeenCalled();
   });
+
+  it("does not return to a retryable deletion state after server deletion succeeds", async () => {
+    vi.mocked(deleteAccount).mockResolvedValue({ success: true });
+    const onDeleted = vi.fn().mockRejectedValue(new Error("local handoff failed"));
+    render(<AccountDeletionPanel onDeleted={onDeleted} />);
+
+    fireEvent.change(document.querySelector('input[type="password"]')!, { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(document.querySelector(".danger-button")!);
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledOnce());
+    expect(document.querySelector(".danger-button")).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(/账号已注销/);
+  });
 });

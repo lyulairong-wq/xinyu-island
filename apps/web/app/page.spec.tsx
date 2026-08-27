@@ -147,4 +147,38 @@ describe("HomePage logout", () => {
     expect(window.localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("access-token");
     expect(screen.queryByText("账号已注销，相关个人数据已删除。")).not.toBeInTheDocument();
   });
+
+  it("clears an account-deletion notice when a later login succeeds", async () => {
+    window.localStorage.setItem(ACCESS_TOKEN_KEY, "access-token");
+    let deleted = false;
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url.endsWith("/me") && !url.endsWith("/me/consents")) {
+        return Promise.resolve(new Response(JSON.stringify(restoredUser), { status: 200 }));
+      }
+      if (url.endsWith("/contacts") || url.endsWith("/conversations")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      if (url.endsWith("/usage")) return Promise.resolve(new Response(JSON.stringify({ free: { limit: 6000, used: 0, remaining: 6000, resetAt: "2026-08-28T00:00:00.000Z" }, token: { paidBalance: 0 } }), { status: 200 }));
+      if (url.endsWith("/me/consents")) return Promise.resolve(new Response(JSON.stringify({ documents: [] }), { status: 200 }));
+      if (url.endsWith("/me/account-deletion")) { deleted = true; return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 })); }
+      if (url.endsWith("/auth/login")) return Promise.resolve(new Response(JSON.stringify({ accessToken: "new-token", sessionId: "new-session", user: restoredUser, requiredConsentTypes: [] }), { status: 200 }));
+      if (url.endsWith("/auth/logout")) return Promise.resolve(new Response(null, { status: 204 }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    const { default: HomePage } = await import("./page");
+    render(<HomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "我的" }));
+    fireEvent.change(document.querySelector('input[type="password"]')!, { target: { value: "password123" } });
+    fireEvent.click(document.querySelector('.confirmation-panel input[type="checkbox"]')!);
+    fireEvent.click(document.querySelector(".danger-button")!);
+    await screen.findByText(/账号已注销/);
+    expect(deleted).toBe(true);
+
+    fireEvent.change(document.querySelector('input[name="email"]')!, { target: { value: "new@example.com" } });
+    fireEvent.change(document.querySelector('input[name="password"]')!, { target: { value: "password123" } });
+    fireEvent.click(document.querySelector(".primary-button")!);
+    await screen.findByRole("button", { name: "我的" });
+    fireEvent.click(screen.getByRole("button", { name: /退出登录/ }));
+    await waitFor(() => expect(document.querySelector(".auth-form")).toBeInTheDocument());
+    expect(screen.queryByText(/账号已注销/)).not.toBeInTheDocument();
+  });
 });

@@ -31,6 +31,11 @@ export default function HomePage() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [message, setMessage] = useState("");
 
+  const handleAuthenticated = (authenticatedUser: AuthUser) => {
+    setMessage("");
+    setUser(authenticatedUser);
+  };
+
   const handleLogout = async () => {
     const storage = getBrowserTokenStorage();
     const token = storage?.read();
@@ -56,7 +61,7 @@ export default function HomePage() {
 
   return (
     <AuthGate
-      onAuthenticated={setUser}
+      onAuthenticated={handleAuthenticated}
       loading={<div aria-live="polite" role="status" />}
       authenticated={(restoredUser) => (
         <AuthenticatedHome
@@ -83,8 +88,8 @@ export default function HomePage() {
               <button className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setMessage(""); }}>注册</button>
             </div>
             {mode === "login"
-              ? <LoginForm onSuccess={setUser} onMessage={setMessage} />
-              : <RegisterForm onSuccess={setUser} onMessage={setMessage} />}
+              ? <LoginForm onSuccess={handleAuthenticated} onMessage={setMessage} />
+              : <RegisterForm onSuccess={handleAuthenticated} onMessage={setMessage} />}
             {message && <p className="form-message">{message}</p>}
           </section>
         </main>
