@@ -23,6 +23,7 @@
     "test:ai": "npm run test --workspace @xinyu/ai",
     "test:safety": "npm run test --workspace @xinyu/safety",
     "test:e2e": "node scripts/e2e/run.mjs",
+    "test:e2e:external-beta": "node scripts/e2e/external-beta.mjs --grep @external-beta",
     "test:e2e:real-model": "node scripts/e2e/real-model.mjs --grep @real-model",
     "verify": "npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run prisma:generate --workspace @xinyu/api",

@@ -15,6 +15,7 @@ const localChrome = process.platform === "win32"
   ? resolve(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe")
   : "";
 const requiresRealModel = process.env.E2E_REQUIRE_REAL_MODEL === "1";
+const requiresExternalBeta = process.env.E2E_EXTERNAL_BETA === "1";
 
 if (requiresRealModel && (!process.env.FREE_MODEL_BASE_URL?.trim() || !process.env.FREE_MODEL_NAME?.trim())) {
   throw new Error("E2E_REQUIRE_REAL_MODEL=1 requires FREE_MODEL_BASE_URL and FREE_MODEL_NAME");
@@ -51,6 +52,16 @@ const environment = {
   ...(requiresRealModel && process.env.FREE_MODEL_API_KEY
     ? { FREE_MODEL_API_KEY: process.env.FREE_MODEL_API_KEY }
     : {}),
+  ...(requiresExternalBeta ? {
+    BETA_REQUIRE_INVITE_CODE: "true",
+    BETA_REQUIRE_ADULT: "true",
+    BETA_TOKEN_MODE_ENABLED: "false",
+    BETA_APPS_ENABLED: "false",
+    BETA_FEEDBACK_ENABLED: "true",
+    BETA_ALLOW_MOCK_FALLBACK: "true",
+    FREE_TOKEN_LIMIT: "3000",
+    BETA_PROJECT_TOKEN_LIMIT: "20000000"
+  } : {}),
   ...(existsSync(localChrome) ? { PLAYWRIGHT_CHROME_EXECUTABLE: localChrome } : {})
 };
 

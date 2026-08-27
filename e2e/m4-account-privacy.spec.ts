@@ -51,6 +51,9 @@ test("注销账号会保留错误密码会话，并立即级联删除所有个�
   await prisma.contactMemory.create({
     data: { userId: originalUser.id, contactId: contact.id, fact: "只属于原账号的验收记忆" }
   });
+  await prisma.betaFeedback.create({
+    data: { userId: originalUser.id, category: "privacy", content: "这是一条必须随账号删除的封测反馈。" }
+  });
   const generation = await prisma.generationRequest.create({
     data: {
       userId: originalUser.id,
@@ -81,6 +84,7 @@ test("注销账号会保留错误密码会话，并立即级联删除所有个�
   expect(await prisma.tokenAccount.count({ where: { userId: originalUser.id } })).toBe(1);
   expect(await prisma.generationRequest.count({ where: { userId: originalUser.id } })).toBe(1);
   expect(await prisma.tokenUsageRecord.count({ where: { userId: originalUser.id } })).toBe(1);
+  expect(await prisma.betaFeedback.count({ where: { userId: originalUser.id } })).toBe(1);
 
   await expect(page.getByRole("button", { name: "我的", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "我的", exact: true }).click();
@@ -111,6 +115,7 @@ test("注销账号会保留错误密码会话，并立即级联删除所有个�
   expect(await prisma.tokenAccount.count({ where: { userId: originalUser.id } })).toBe(0);
   expect(await prisma.generationRequest.count({ where: { userId: originalUser.id } })).toBe(0);
   expect(await prisma.tokenUsageRecord.count({ where: { userId: originalUser.id } })).toBe(0);
+  expect(await prisma.betaFeedback.count({ where: { userId: originalUser.id } })).toBe(0);
 
   const staleTokenProfile = await request.get("http://127.0.0.1:4100/api/v1/me", {
     headers: { Authorization: `Bearer ${oldToken}` }
