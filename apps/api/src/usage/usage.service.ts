@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { loadBetaConfig } from "@xinyu/config";
 import { PrismaService } from "../prisma/prisma.service";
 
 const DEFAULT_FREE_LIMIT = 6_000;
@@ -160,6 +161,13 @@ export class UsageService {
 
         const account = await this.resetIfNeeded(await this.ensureAccount(userId, transaction), transaction, now);
         if (account.freeUsed + reservedTokens > account.freeLimit) throw this.freeError("FREE_QUOTA_EXCEEDED");
+        const projectUsage = await transaction.generationRequest.aggregate({
+          where: { mode: "free", status: { in: ["reserved", "completed"] } },
+          _sum: { reservedTokens: true }
+        });
+        if ((projectUsage._sum.reservedTokens ?? 0) + reservedTokens > loadBetaConfig(process.env).projectTokenLimit) {
+          throw this.freeError("BETA_PROJECT_QUOTA_EXCEEDED");
+        }
 
         const created = await transaction.generationRequest.create({
           data: { userId, conversationId: estimate.conversationId, requestId, mode: "free", status: "reserved", reservedTokens }
@@ -344,7 +352,7 @@ export class UsageService {
     });
   }
 
-  private freeError(code: "FREE_QUOTA_EXCEEDED" | "FREE_COOLDOWN_ACTIVE" | "FREE_GENERATION_IN_PROGRESS") {
+  private freeError(code: "FREE_QUOTA_EXCEEDED" | "FREE_COOLDOWN_ACTIVE" | "FREE_GENERATION_IN_PROGRESS" | "BETA_PROJECT_QUOTA_EXCEEDED") {
     return new BadRequestException({ code });
   }
 }

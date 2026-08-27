@@ -93,6 +93,13 @@ function createUsagePrisma(account?: Partial<Account>, options: { failUsageRecor
           request.userId === where.userId && request.status === where.status && (!where.completedAt || (request.completedAt?.getTime() ?? 0) > where.completedAt.gt.getTime())
         ) ?? null
       ),
+      aggregate: vi.fn(async () => ({
+        _sum: {
+          reservedTokens: current.requests
+            .filter((request) => request.mode === "free" && (request.status === "reserved" || request.status === "completed"))
+            .reduce((sum, request) => sum + request.reservedTokens, 0)
+        }
+      })),
       create: vi.fn(async ({ data }: { data: Omit<Request, "id" | "provider" | "completedAt"> }) => {
         if (current.requests.some((request) => request.userId === data.userId && request.requestId === data.requestId)) {
           throw Object.assign(new Error("Unique constraint"), { code: "P2002" });
@@ -181,6 +188,21 @@ describe("UsageService free generation accounting", () => {
     expect(prisma.state.account?.freeLimit).toBe(10_000);
     expect(prisma.state.account?.freeUsed).toBe(5_900);
     expect(prisma.state.requests).toHaveLength(0);
+  });
+
+  it("stops new free reservations when the closed-beta project token cap is reached", async () => {
+    vi.setSystemTime(new Date("2026-08-09T12:00:00.000Z"));
+    vi.stubEnv("BETA_PROJECT_TOKEN_LIMIT", "300");
+    const prisma = createUsagePrisma();
+    const service = new UsageService(prisma as never);
+
+    await service.reserveFree("user-1", "request-1", estimate(200));
+    await service.finalizeFree({ ...prisma.state.requests[0]!, estimatedInputTokens: 200, estimatedOutputTokens: 0 }, { provider: "local" });
+
+    await expect(service.reserveFree("user-2", "request-2", estimate(101))).rejects.toMatchObject({
+      response: { code: "BETA_PROJECT_QUOTA_EXCEEDED" }
+    });
+    expect(prisma.state.requests).toHaveLength(1);
   });
 
   it("resets usage at Beijing midnight and schedules the next Beijing midnight", async () => {
