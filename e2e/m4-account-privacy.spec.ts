@@ -7,8 +7,10 @@ if (!databaseUrl) {
   throw new Error("E2E_DATABASE_URL is required; this test must run through scripts/e2e/run.mjs");
 }
 
-if (!databaseUrl.includes("xinyu_e2e")) {
-  throw new Error("Refusing to run M4 E2E against a non-disposable database");
+const isolatedDatabaseUrl = "postgresql://xinyu_e2e:xinyu_e2e@127.0.0.1:15433/xinyu_e2e?schema=public";
+
+if (databaseUrl !== isolatedDatabaseUrl) {
+  throw new Error("Refusing to run M4 E2E outside the local disposable PostgreSQL database");
 }
 
 const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
