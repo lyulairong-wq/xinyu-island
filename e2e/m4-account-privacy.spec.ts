@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient as PrismaClientType } from "@prisma/client";
+
+const { PrismaClient } = require("../apps/api/node_modules/@prisma/client") as typeof import("@prisma/client");
 
 const databaseUrl = process.env.E2E_DATABASE_URL;
+const apiPort = Number(process.env.E2E_API_PORT ?? 4600);
 
 if (!databaseUrl) {
   throw new Error("E2E_DATABASE_URL is required; this test must run through scripts/e2e/run.mjs");
@@ -13,7 +16,7 @@ if (databaseUrl !== isolatedDatabaseUrl) {
   throw new Error("Refusing to run M4 E2E outside the local disposable PostgreSQL database");
 }
 
-const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+const prisma: PrismaClientType = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 
 test.afterAll(async () => {
   await prisma.$disconnect();
@@ -96,7 +99,7 @@ test("注销账号会保留错误密码会话，并立即级联删除所有个�
   await expect(page.getByRole("status")).toBeVisible();
 
   expect(await prisma.user.count({ where: { id: originalUser.id } })).toBe(1);
-  const stillAuthenticated = await request.get("http://127.0.0.1:4100/api/v1/me", {
+  const stillAuthenticated = await request.get(`http://127.0.0.1:${apiPort}/api/v1/me`, {
     headers: { Authorization: `Bearer ${oldToken}` }
   });
   expect(stillAuthenticated.status()).toBe(200);
@@ -117,7 +120,7 @@ test("注销账号会保留错误密码会话，并立即级联删除所有个�
   expect(await prisma.tokenUsageRecord.count({ where: { userId: originalUser.id } })).toBe(0);
   expect(await prisma.betaFeedback.count({ where: { userId: originalUser.id } })).toBe(0);
 
-  const staleTokenProfile = await request.get("http://127.0.0.1:4100/api/v1/me", {
+  const staleTokenProfile = await request.get(`http://127.0.0.1:${apiPort}/api/v1/me`, {
     headers: { Authorization: `Bearer ${oldToken}` }
   });
   expect(staleTokenProfile.status()).toBe(401);

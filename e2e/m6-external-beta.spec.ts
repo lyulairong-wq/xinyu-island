@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient as PrismaClientType } from "@prisma/client";
+
+const { PrismaClient } = require("../apps/api/node_modules/@prisma/client") as typeof import("@prisma/client");
 
 const databaseUrl = process.env.E2E_DATABASE_URL;
 if (!databaseUrl) throw new Error("E2E_DATABASE_URL is required");
 const requiresExternalBeta = process.env.E2E_EXTERNAL_BETA === "1";
 
-const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+const prisma: PrismaClientType = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 
 test.afterAll(async () => {
   await prisma.$disconnect();

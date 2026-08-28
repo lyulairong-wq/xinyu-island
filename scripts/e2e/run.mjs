@@ -5,8 +5,8 @@ import { existsSync } from "node:fs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const dbPort = Number(process.env.E2E_DB_PORT ?? 15433);
-const apiPort = Number(process.env.E2E_API_PORT ?? 4100);
-const webPort = Number(process.env.E2E_WEB_PORT ?? 3100);
+const apiPort = Number(process.env.E2E_API_PORT ?? 4600);
+const webPort = Number(process.env.E2E_WEB_PORT ?? 3600);
 const containerName = `xinyu-e2e-postgres-${process.pid}-${Date.now()}`;
 const databaseUrl = `postgresql://xinyu_e2e:xinyu_e2e@127.0.0.1:${dbPort}/xinyu_e2e?schema=public`;
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -153,7 +153,7 @@ try {
   ]);
   await waitForDatabase();
   await run(npm, ["run", "db:generate"]);
-  await run(npx, ["prisma", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]);
+  await run(npm, ["exec", "--workspace", "@xinyu/api", "prisma", "--", "migrate", "deploy", "--schema", "prisma/schema.prisma"]);
   await run(npm, ["run", "build"]);
   apiProcess = start("node", ["apps/api/dist/main.js"]);
   await waitForHttp(`http://127.0.0.1:${apiPort}/api/v1/health/ready`);
