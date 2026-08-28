@@ -25,6 +25,8 @@
     "test:e2e": "node scripts/e2e/run.mjs",
     "test:e2e:external-beta": "node scripts/e2e/external-beta.mjs --grep @external-beta",
     "test:e2e:real-model": "node scripts/e2e/real-model.mjs --grep @real-model",
+    "test:ops": "npm run build --workspace @xinyu/config && node --test scripts/ops/*.test.mjs",
+    "beta:preflight": "npm run build --workspace @xinyu/config && node scripts/ops/external-beta-preflight.mjs",
     "verify": "npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run prisma:generate --workspace @xinyu/api",
     "db:migrate": "npm run prisma:migrate --workspace @xinyu/api"

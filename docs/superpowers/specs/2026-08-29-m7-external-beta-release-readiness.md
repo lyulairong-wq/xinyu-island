@@ -31,3 +31,7 @@
 - 容器模板不包含默认密钥、邀请码或数据库端口暴露；迁移成功后 API `/api/v1/health/ready` 才可视为就绪。
 - 备份必须加密并保留最近 7 份；恢复只允许显式隔离目标，拒绝生产连接字符串。
 - `npm run verify`、新增脚本测试及生产配置检查通过；文档区分“代码已准备”与“外部人工门槛未完成”。
+
+## 发布前检查证据
+
+`npm run beta:preflight` 只检查配置和受保护证据目录中的命名文件是否存在；它不评价文件内容，也不替代任何专业审核。部署负责人必须在仓库之外保存并显式设置 `BETA_RELEASE_EVIDENCE_DIR`，其中至少包含：`legal-review.md`、`compliance-plan.md`、`cloud-budget-proof.md`、`backup-restore-drill.md`、`operations-owner.md`。

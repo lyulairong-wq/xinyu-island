@@ -1,0 +1,90 @@
+services:
+  migrate:
+    build:
+      context: ..
+      target: api
+      args:
+        NEXT_PUBLIC_API_URL: https://${BETA_DOMAIN}/api/v1
+    environment: &api-environment
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      WEB_ORIGIN: https://${BETA_DOMAIN}
+      FREE_MODEL_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+      FREE_MODEL_NAME: qwen3.6-flash-2026-04-16
+      FREE_MODEL_API_KEY: ${FREE_MODEL_API_KEY}
+      FREE_TOKEN_LIMIT: 3000
+      FREE_MODEL_TIMEOUT_MS: ${FREE_MODEL_TIMEOUT_MS:-30000}
+      FREE_MAX_INPUT_CHARS: ${FREE_MAX_INPUT_CHARS:-2000}
+      FREE_MAX_OUTPUT_TOKENS: ${FREE_MAX_OUTPUT_TOKENS:-512}
+      FREE_USER_COOLDOWN_MS: ${FREE_USER_COOLDOWN_MS:-3000}
+      BETA_REGISTRATION_ENABLED: "true"
+      BETA_REQUIRE_INVITE_CODE: "true"
+      BETA_REQUIRE_ADULT: "true"
+      BETA_GENERATION_ENABLED: "true"
+      BETA_ALLOW_MOCK_FALLBACK: "false"
+      BETA_TOKEN_MODE_ENABLED: "false"
+      BETA_APPS_ENABLED: "false"
+      BETA_FEEDBACK_ENABLED: "true"
+      BETA_PROJECT_TOKEN_LIMIT: "20000000"
+    command: ["node_modules/.bin/prisma", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      target: api
+      args:
+        NEXT_PUBLIC_API_URL: https://${BETA_DOMAIN}/api/v1
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  web:
+    build:
+      context: ..
+      target: web
+      args:
+        NEXT_PUBLIC_API_URL: https://${BETA_DOMAIN}/api/v1
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      BETA_DOMAIN: ${BETA_DOMAIN}
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+
