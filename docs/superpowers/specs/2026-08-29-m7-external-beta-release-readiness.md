@@ -35,3 +35,5 @@
 ## 发布前检查证据
 
 `npm run beta:preflight` 只检查配置和受保护证据目录中的命名文件是否存在；它不评价文件内容，也不替代任何专业审核。部署负责人必须在仓库之外保存并显式设置 `BETA_RELEASE_EVIDENCE_DIR`，其中至少包含：`legal-review.md`、`compliance-plan.md`、`cloud-budget-proof.md`、`backup-restore-drill.md`、`operations-owner.md`。
+
+加密备份使用 `npm run beta:backup`：必须显式提供 `NODE_ENV=production`、`BACKUP_DATABASE_URL`、绝对路径 `BACKUP_DIR` 和 `BACKUP_PASSPHRASE_FILE`，只保留最近 7 份加密备份及哈希文件。恢复使用 `npm run beta:restore`，必须指定 `RESTORE_CONFIRMATION=RESTORE_TO_ISOLATED_DATABASE`，且目标数据库名必须包含 `restore`、`drill` 或 `isolated`；脚本拒绝其它目标。
