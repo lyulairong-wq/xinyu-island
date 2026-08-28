@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FeedbackService } from "./feedback.service";
 
 describe("FeedbackService", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("stores only the tester's selected category and submitted text", async () => {
     vi.stubEnv("BETA_FEEDBACK_ENABLED", "true");
     const prisma = {
@@ -30,5 +34,20 @@ describe("FeedbackService", () => {
       response: { code: "BETA_FEEDBACK_DISABLED" }
     });
     expect(prisma.betaFeedback.create).not.toHaveBeenCalled();
+  });
+
+  it("allows an explicit safety report without turning it into a model input", async () => {
+    vi.stubEnv("BETA_FEEDBACK_ENABLED", "true");
+    const prisma = {
+      betaFeedback: {
+        create: vi.fn(async ({ data }) => ({ id: "feedback-safety", category: data.category, createdAt: new Date() }))
+      }
+    };
+    const service = new FeedbackService(prisma as never);
+
+    await expect(service.create("user-1", {
+      category: "safety",
+      content: "请检查：测试中曾出现关于自行停药的错误建议，应立即处置。"
+    })).resolves.toMatchObject({ id: "feedback-safety", category: "safety" });
   });
 });

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { loadConfig } from "@xinyu/config";
 import type { SkillCard, SkillCode, SkillDefinition, SkillInputCode } from "@xinyu/contracts";
 import { ChatGenerationCoordinator } from "../chat/chat-generation-coordinator";
@@ -43,6 +43,11 @@ export class SkillSessionService {
   ) {}
 
   async start(userId: string, conversationId: string, input: StartSkillSessionDto) {
+    const runtimeConfig = loadConfig(process.env);
+    if (!runtimeConfig.beta.generationEnabled) throw new ForbiddenException({ code: "BETA_GENERATION_PAUSED" });
+    if (!runtimeConfig.beta.tokenModeEnabled && input.mode === "token") {
+      throw new ForbiddenException({ code: "BETA_TOKEN_MODE_DISABLED" });
+    }
     const conversation = await this.ownedConversation(userId, conversationId);
     const contact = await this.skillContact(userId, conversation, input.targetContactId, input.skill);
     const definition = this.catalog.get(input.skill);
@@ -66,7 +71,7 @@ export class SkillSessionService {
         })).map((memory) => memory.fact)
       : [];
     const card = this.card(definition);
-    const modelConfig = loadConfig(process.env).freeModel;
+    const modelConfig = runtimeConfig.freeModel;
     const result = await this.coordinator.generate({
       userId,
       conversationId: conversation.id,

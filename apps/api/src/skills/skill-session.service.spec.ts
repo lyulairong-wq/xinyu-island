@@ -227,6 +227,29 @@ describe("SkillSessionService", () => {
     expect(contacts.createMemory).not.toHaveBeenCalled();
   });
 
+  it("does not start a skill or persist messages while beta generation is paused", async () => {
+    vi.stubEnv("BETA_GENERATION_ENABLED", "false");
+    const { generate, messages, sessions, usage } = createHarness();
+
+    await expect(sessions.start(USER_ID, CONVERSATION_ID, tarotInput())).rejects.toMatchObject({
+      response: { code: "BETA_GENERATION_PAUSED" }
+    });
+    expect(generate).not.toHaveBeenCalled();
+    expect(usage.reserveFree).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+  });
+
+  it("does not allow the simulated token skill path when beta token mode is disabled", async () => {
+    vi.stubEnv("BETA_TOKEN_MODE_ENABLED", "false");
+    const { generate, messages, sessions } = createHarness();
+
+    await expect(sessions.start(USER_ID, CONVERSATION_ID, tarotInput({ mode: "token" }))).rejects.toMatchObject({
+      response: { code: "BETA_TOKEN_MODE_DISABLED" }
+    });
+    expect(generate).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+  });
+
   it("rejects high-risk medical-decision input before generation and creates no card", async () => {
     const { gateway, generate, messages, sessions, usage } = createHarness();
 
