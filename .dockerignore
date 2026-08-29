@@ -6,6 +6,7 @@ dist
 **/dist
 .next
 **/.next
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
@@ -13,4 +14,3 @@ coverage
 playwright-report
 test-results
 *.log
-

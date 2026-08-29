@@ -1,0 +1,31 @@
+name: External beta release readiness
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feature/m7-external-beta-release-readiness]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-external-beta-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run verify
+      - run: npm run test:ops
+      - run: docker compose --env-file deployment/external-beta.env.example -f deployment/compose.external-beta.yml config --quiet
+      - run: docker build --target migrate -t xinyu-migrate:ci .
+      - run: docker build --target api -t xinyu-api:ci .
+      - run: docker build --target web -t xinyu-web:ci .

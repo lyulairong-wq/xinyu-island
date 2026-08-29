@@ -46,7 +46,13 @@ export async function runExternalBetaPreflight(env = process.env) {
   assertNoExampleValue("JWT_SECRET", env.JWT_SECRET);
   assertNoExampleValue("FREE_MODEL_API_KEY", env.FREE_MODEL_API_KEY);
   await assertEvidence(env.BETA_RELEASE_EVIDENCE_DIR);
-  loadConfig(env);
+  const config = loadConfig(env);
+  if (!config.beta.registrationEnabled) {
+    throw new Error("External beta preflight failed: registration must be enabled before launch");
+  }
+  if (!config.beta.generationEnabled) {
+    throw new Error("External beta preflight failed: generation must be enabled before launch");
+  }
   return "External beta preflight passed: configuration and named release evidence are present.";
 }
 
@@ -59,4 +65,3 @@ if (isDirectExecution) {
     process.exitCode = 1;
   });
 }
-

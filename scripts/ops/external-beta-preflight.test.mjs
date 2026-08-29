@@ -52,3 +52,10 @@ test("rejects placeholder production secrets", async () => {
   );
 });
 
+test("rejects a paused configuration before an external beta launch", async () => {
+  const evidenceDirectory = await createEvidenceDirectory();
+  await assert.rejects(
+    () => runExternalBetaPreflight({ ...validEnvironment(evidenceDirectory), BETA_GENERATION_ENABLED: "false" }),
+    /generation must be enabled/
+  );
+});

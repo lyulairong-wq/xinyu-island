@@ -29,7 +29,7 @@
     "beta:backup": "node scripts/ops/postgres-backup.mjs",
     "beta:restore": "node scripts/ops/postgres-restore.mjs",
     "beta:preflight": "npm run build --workspace @xinyu/config && node scripts/ops/external-beta-preflight.mjs",
-    "verify": "npm run typecheck && npm run test && npm run build",
+    "verify": "npm run db:generate && npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run prisma:generate --workspace @xinyu/api",
     "db:migrate": "npm run prisma:migrate --workspace @xinyu/api"
   },

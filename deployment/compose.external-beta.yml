@@ -2,7 +2,7 @@ services:
   migrate:
     build:
       context: ..
-      target: api
+      target: migrate
       args:
         NEXT_PUBLIC_API_URL: https://${BETA_DOMAIN}/api/v1
     environment: &api-environment
@@ -87,4 +87,3 @@ services:
 volumes:
   caddy-data:
   caddy-config:
-

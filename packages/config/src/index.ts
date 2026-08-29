@@ -130,9 +130,6 @@ function validateExternalBetaProductionConfig(config: AppConfig): void {
   }
 
   const { beta } = config;
-  if (!beta.registrationEnabled || !beta.generationEnabled) {
-    rejectExternalBetaProductionConfiguration("registration and generation must be enabled before launch");
-  }
   if (!beta.requireInviteCode || !beta.requireAdult || beta.allowMockFallback || beta.tokenModeEnabled || beta.appsEnabled || !beta.feedbackEnabled) {
     rejectExternalBetaProductionConfiguration("external beta admission, fallback, UI, and feedback switches are invalid");
   }

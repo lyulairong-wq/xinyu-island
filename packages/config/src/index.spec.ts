@@ -114,6 +114,29 @@ describe("loadConfig", () => {
     expect(config.nodeEnv).toBe("production");
   });
 
+  it("permits an otherwise locked production configuration to pause registration or generation", () => {
+    const productionEnv = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://xinyu:secret@postgres.internal/xinyu?sslmode=require",
+      JWT_SECRET: "12345678901234567890123456789012",
+      WEB_ORIGIN: "https://beta.xinyu.example",
+      FREE_MODEL_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      FREE_MODEL_NAME: "qwen3.6-flash-2026-04-16",
+      FREE_MODEL_API_KEY: "test-key",
+      FREE_TOKEN_LIMIT: "3000",
+      BETA_REQUIRE_INVITE_CODE: "true",
+      BETA_REQUIRE_ADULT: "true",
+      BETA_ALLOW_MOCK_FALLBACK: "false",
+      BETA_TOKEN_MODE_ENABLED: "false",
+      BETA_APPS_ENABLED: "false",
+      BETA_FEEDBACK_ENABLED: "true",
+      BETA_PROJECT_TOKEN_LIMIT: "20000000"
+    };
+
+    expect(() => loadConfig({ ...productionEnv, BETA_REGISTRATION_ENABLED: "false" })).not.toThrow();
+    expect(() => loadConfig({ ...productionEnv, BETA_GENERATION_ENABLED: "false" })).not.toThrow();
+  });
+
   it.each([
     { WEB_ORIGIN: "http://beta.xinyu.example" },
     { FREE_MODEL_BASE_URL: "https://model.example/v1" },
