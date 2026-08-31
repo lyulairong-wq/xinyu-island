@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   verify-external-beta-artifacts:
@@ -23,7 +24,37 @@ jobs:
 
       - run: npm ci
       - run: npm run db:generate
-      - run: npm run verify
+      - name: Run project verification
+        id: verify
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify.log
+
+      - name: Publish verification diagnostic
+        if: always() && steps.verify.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('verify.log', 'utf8').slice(-60000);
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'M7 verification diagnostic',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'failure',
+              output: {
+                title: 'npm run verify failed',
+                summary: `\`\`\`text\n${output}\n\`\`\``
+              }
+            });
+
+      - name: Fail when project verification fails
+        if: steps.verify.outcome == 'failure'
+        run: exit 1
+
       - run: npm run test:ops
       - run: docker compose --env-file deployment/external-beta.env.example -f deployment/compose.external-beta.yml config --quiet
       - run: docker build --target migrate -t xinyu-migrate:ci .
