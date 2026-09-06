@@ -41,7 +41,7 @@ test("accepts a locked configuration with all named evidence", async () => {
 
 test("rejects missing evidence and does not treat configuration alone as a release approval", async () => {
   const environment = validEnvironment("C:\\missing-xinyu-evidence");
-  await assert.rejects(() => runExternalBetaPreflight(environment), /evidence/);
+  await assert.rejects(() => runExternalBetaPreflight(environment), /evidence/i);
 });
 
 test("rejects placeholder production secrets", async () => {
