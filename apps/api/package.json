@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build --workspace @xinyu/ai && npm run build --workspace @xinyu/safety",
-    "test": "vitest run --passWithNoTests --exclude dist/**",
+    "test": "vitest run --passWithNoTests --exclude=**/dist/**",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "beta:invites": "tsx scripts/generate-invites.ts"

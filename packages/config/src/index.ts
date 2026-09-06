@@ -92,6 +92,52 @@ export function loadBetaConfig(env: NodeJS.ProcessEnv): BetaConfig {
   };
 }
 
+const EXTERNAL_BETA_MODEL_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const EXTERNAL_BETA_MODEL_NAME = "qwen3.6-flash-2026-04-16";
+const EXTERNAL_BETA_DAILY_TOKEN_LIMIT = 3_000;
+const EXTERNAL_BETA_PROJECT_TOKEN_LIMIT = 20_000_000;
+
+function rejectExternalBetaProductionConfiguration(reason: string): never {
+  throw new Error(`External beta production configuration is unsafe: ${reason}`);
+}
+
+function validateExternalBetaProductionConfig(config: AppConfig): void {
+  let webOrigin: URL;
+  try {
+    webOrigin = new URL(config.webOrigin);
+  } catch {
+    rejectExternalBetaProductionConfiguration("WEB_ORIGIN must be a valid HTTPS URL");
+  }
+
+  if (webOrigin.protocol !== "https:" || !webOrigin.hostname || webOrigin.username || webOrigin.password) {
+    rejectExternalBetaProductionConfiguration("WEB_ORIGIN must be a valid HTTPS URL");
+  }
+
+  if (config.freeModel.baseUrl !== EXTERNAL_BETA_MODEL_BASE_URL) {
+    rejectExternalBetaProductionConfiguration("FREE_MODEL_BASE_URL must use the approved Beijing DashScope endpoint");
+  }
+
+  if (config.freeModel.model !== EXTERNAL_BETA_MODEL_NAME) {
+    rejectExternalBetaProductionConfiguration("FREE_MODEL_NAME must use the approved external-beta model");
+  }
+
+  if (!config.freeModel.apiKey) {
+    rejectExternalBetaProductionConfiguration("FREE_MODEL_API_KEY is required");
+  }
+
+  if (config.freeModel.freeDailyLimit !== EXTERNAL_BETA_DAILY_TOKEN_LIMIT) {
+    rejectExternalBetaProductionConfiguration("FREE_TOKEN_LIMIT must be 3000");
+  }
+
+  const { beta } = config;
+  if (!beta.requireInviteCode || !beta.requireAdult || beta.allowMockFallback || beta.tokenModeEnabled || beta.appsEnabled || !beta.feedbackEnabled) {
+    rejectExternalBetaProductionConfiguration("external beta admission, fallback, UI, and feedback switches are invalid");
+  }
+  if (beta.projectTokenLimit !== EXTERNAL_BETA_PROJECT_TOKEN_LIMIT) {
+    rejectExternalBetaProductionConfiguration("BETA_PROJECT_TOKEN_LIMIT must be 20000000");
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   const nodeEnv = env.NODE_ENV === "production" || env.NODE_ENV === "test" ? env.NODE_ENV : "development";
   const apiPort = Number(env.API_PORT ?? 4000);
@@ -112,7 +158,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
 
   const modelEndpoint = parseModelEndpoint(env);
 
-  return {
+  const config: AppConfig = {
     nodeEnv,
     apiPort,
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:3000",
@@ -128,4 +174,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     },
     beta: loadBetaConfig(env)
   };
+
+  if (config.nodeEnv === "production") {
+    validateExternalBetaProductionConfig(config);
+  }
+
+  return config;
 }
