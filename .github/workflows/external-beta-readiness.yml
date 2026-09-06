@@ -55,7 +55,37 @@ jobs:
         if: steps.verify.outcome == 'failure'
         run: exit 1
 
-      - run: npm run test:ops
+      - name: Run external beta operations tests
+        id: operations_tests
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run test:ops 2>&1 | tee operations-tests.log
+
+      - name: Publish operations test diagnostic
+        if: always() && steps.operations_tests.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('operations-tests.log', 'utf8').slice(-60000);
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'M7 operations test diagnostic',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'failure',
+              output: {
+                title: 'npm run test:ops failed',
+                summary: `\`\`\`text\n${output}\n\`\`\``
+              }
+            });
+
+      - name: Fail when operations tests fail
+        if: steps.operations_tests.outcome == 'failure'
+        run: exit 1
+
       - run: docker compose --env-file deployment/external-beta.env.example -f deployment/compose.external-beta.yml config --quiet
       - run: docker build --target migrate -t xinyu-migrate:ci .
       - run: docker build --target api -t xinyu-api:ci .
